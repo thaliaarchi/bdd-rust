@@ -1,5 +1,6 @@
 use std::collections::{hash_map::Entry, HashMap};
-use std::fmt::{self, Debug, Display, Formatter};
+use std::collections::{BTreeSet, HashSet};
+use std::fmt::{self, Debug, Display, Formatter, Write};
 
 use crate::{Exp, Var};
 
@@ -35,13 +36,21 @@ impl BddId {
         self.0
     }
 
+    /// Return whether the BDD is either 0 or 1.
     #[inline]
-    fn is_zero(&self) -> bool {
+    pub fn is_const(&self) -> bool {
+        self.0 <= 1
+    }
+
+    /// Return whether the BDD is 0.
+    #[inline]
+    pub fn is_zero(&self) -> bool {
         self.0 == 0
     }
 
+    /// Return whether the BDD is 1.
     #[inline]
-    fn is_one(&self) -> bool {
+    pub fn is_one(&self) -> bool {
         self.0 == 1
     }
 }
@@ -52,6 +61,9 @@ impl BddNode {
         BddNode { var, high, low }
     }
 
+    /// Split into expressions `co1`, `co0`, that have `var` factored out, such
+    /// that `(var ∧ co1) ∨ (¬var ∧ co0)`.
+    #[inline]
     fn cofactor(&self, self_id: BddId, var: Var) -> (BddId, BddId) {
         if self.var == var {
             (self.high, self.low)
@@ -77,8 +89,17 @@ impl Bdd {
         Bdd { by_id, by_node }
     }
 
+    /// Get the node for the BDD id.
+    #[inline]
+    pub fn get(&self, id: BddId) -> BddNode {
+        self.by_id[id.as_usize()]
+    }
+
     /// Get or insert the BDD for a node.
     pub fn insert_node(&mut self, node: BddNode) -> BddId {
+        if node.high == node.low {
+            return node.high;
+        }
         match self.by_node.entry(node) {
             Entry::Occupied(entry) => *entry.get(),
             Entry::Vacant(entry) => {
@@ -125,9 +146,9 @@ impl Bdd {
             return bdd_else;
         }
 
-        let node_if = self.by_id[bdd_if.as_usize()];
-        let node_then = self.by_id[bdd_then.as_usize()];
-        let node_else = self.by_id[bdd_else.as_usize()];
+        let node_if = self.get(bdd_if);
+        let node_then = self.get(bdd_then);
+        let node_else = self.get(bdd_else);
 
         // Cofactor each sub-function by the minimum variable
         let var = node_if.var.min(node_then.var).min(node_else.var);
@@ -163,6 +184,62 @@ impl Bdd {
             }
         }
     }
+
+    pub fn post_order(&self, id: BddId) -> Vec<BddId> {
+        let mut post_order = Vec::new();
+        let mut visited = HashSet::new();
+        self.append_post_order(id, &mut post_order, &mut visited);
+        post_order
+    }
+
+    pub fn append_post_order(
+        &self,
+        id: BddId,
+        post_order: &mut Vec<BddId>,
+        visited: &mut HashSet<BddId>,
+    ) {
+        if visited.insert(id) {
+            let node = self.get(id);
+            self.append_post_order(node.high, post_order, visited);
+            self.append_post_order(node.low, post_order, visited);
+            post_order.push(id);
+        }
+    }
+
+    pub fn reachable(&self, id: BddId) -> BTreeSet<BddId> {
+        let mut reachable = BTreeSet::new();
+        self.append_reachable(id, &mut reachable);
+        reachable
+    }
+
+    pub fn append_reachable(&self, id: BddId, reachable: &mut BTreeSet<BddId>) {
+        if reachable.insert(id) {
+            let node = self.get(id);
+            self.append_reachable(node.high, reachable);
+            self.append_reachable(node.low, reachable);
+        }
+    }
+
+    /// Display the BDD as a GraphViz directed graph.
+    pub fn digraph(&self, w: &mut (dyn Write), id: BddId) -> fmt::Result {
+        let reachable = self.reachable(id);
+        writeln!(w, "digraph bdd{} {{", id.0)?;
+        for id in reachable {
+            let node = self.get(id);
+            if id.is_const() {
+                writeln!(w, "    node{} [shape=none, label={}];", id.0, id.0)?;
+            } else {
+                writeln!(
+                    w,
+                    "    node{} [shape=none, label=<{}<sup>{}</sup>>];",
+                    id.0, node.var, id.0,
+                )?;
+                writeln!(w, "    node{} -> node{};", id.0, node.high.0)?;
+                writeln!(w, "    node{} -> node{} [style=dashed];", id.0, node.low.0)?;
+            }
+        }
+        writeln!(w, "}}")
+    }
 }
 
 impl Display for Bdd {
@@ -182,33 +259,38 @@ mod tests {
 
     #[test]
     fn insert_exp() {
+        const A: usize = 0;
+        const B: usize = 1;
+        const C: usize = 2;
+        const D: usize = 3;
+        // (a ∧ b) ∨ (¬a ∧ c) ∨ (b ∧ ¬c ∧ d)
         let f = Exp::or(
             Exp::or(
-                Exp::and(Exp::var(0), Exp::var(1)),
-                Exp::and(Exp::not(Exp::var(0)), Exp::var(2)),
+                Exp::and(Exp::var(A), Exp::var(B)),
+                Exp::and(Exp::not(Exp::var(A)), Exp::var(C)),
             ),
-            Exp::and(Exp::and(Exp::var(1), Exp::not(Exp::var(2))), Exp::var(3)),
+            Exp::and(Exp::and(Exp::var(B), Exp::not(Exp::var(C))), Exp::var(D)),
         );
         let mut bdd = Bdd::new(4);
         bdd.insert_exp(&f);
         let expected = vec![
-            BddNode::new(Var::ZERO, BddId::ZERO, BddId::ZERO),
-            BddNode::new(Var::ONE, BddId::ONE, BddId::ONE),
-            BddNode::new(Var::new(0), BddId::new(1), BddId::new(0)),
-            BddNode::new(Var::new(1), BddId::new(1), BddId::new(0)),
-            BddNode::new(Var::new(2), BddId::new(1), BddId::new(0)),
-            BddNode::new(Var::new(3), BddId::new(1), BddId::new(0)),
-            BddNode::new(Var::new(0), BddId::new(3), BddId::new(0)),
-            BddNode::new(Var::new(0), BddId::new(0), BddId::new(1)),
-            BddNode::new(Var::new(0), BddId::new(0), BddId::new(4)),
-            BddNode::new(Var::new(0), BddId::new(3), BddId::new(4)),
-            BddNode::new(Var::new(2), BddId::new(0), BddId::new(1)),
-            BddNode::new(Var::new(1), BddId::new(10), BddId::new(0)),
-            BddNode::new(Var::new(2), BddId::new(0), BddId::new(5)),
-            BddNode::new(Var::new(1), BddId::new(12), BddId::new(0)),
-            BddNode::new(Var::new(2), BddId::new(1), BddId::new(5)),
-            BddNode::new(Var::new(1), BddId::new(14), BddId::new(4)),
-            BddNode::new(Var::new(0), BddId::new(3), BddId::new(15)),
+            BddNode::new(Var::ZERO, BddId::ZERO, BddId::ZERO), // 0
+            BddNode::new(Var::ONE, BddId::ONE, BddId::ONE),    // 1
+            BddNode::new(Var::new(A), BddId::new(1), BddId::new(0)), // 2
+            BddNode::new(Var::new(B), BddId::new(1), BddId::new(0)), // 3
+            BddNode::new(Var::new(C), BddId::new(1), BddId::new(0)), // 4
+            BddNode::new(Var::new(D), BddId::new(1), BddId::new(0)), // 5
+            BddNode::new(Var::new(A), BddId::new(3), BddId::new(0)), // 6
+            BddNode::new(Var::new(A), BddId::new(0), BddId::new(1)), // 7
+            BddNode::new(Var::new(A), BddId::new(0), BddId::new(4)), // 8
+            BddNode::new(Var::new(A), BddId::new(3), BddId::new(4)), // 9
+            BddNode::new(Var::new(C), BddId::new(0), BddId::new(1)), // 10
+            BddNode::new(Var::new(B), BddId::new(10), BddId::new(0)), // 11
+            BddNode::new(Var::new(C), BddId::new(0), BddId::new(5)), // 12
+            BddNode::new(Var::new(B), BddId::new(12), BddId::new(0)), // 13
+            BddNode::new(Var::new(C), BddId::new(1), BddId::new(5)), // 14
+            BddNode::new(Var::new(B), BddId::new(14), BddId::new(4)), // 15
+            BddNode::new(Var::new(A), BddId::new(3), BddId::new(15)), // 16
         ];
         assert_eq!(expected, bdd.by_id);
     }
