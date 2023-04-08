@@ -1,0 +1,12 @@
+[package]
+name = "bdd"
+version = "0.1.0"
+authors = ["Thalia Archibald"]
+edition = "2021"
+description = "A library for binary decision diagrams"
+repository = "https://github.com/thaliaarchi/bdd-rust"
+license = "GPL-3.0-or-later"
+keywords = ["bdd", "robdd"]
+categories = ["data-structures", "algorithms"]
+
+[dependencies]
