@@ -185,6 +185,19 @@ impl Bdd {
         }
     }
 
+    /// Create a new BDD from `id` with the variables replaced according to the
+    /// mappings in `replace`.
+    pub fn replace(&mut self, id: BddId, replace: &HashMap<Var, Var>) -> BddId {
+        if id.is_const() {
+            return id;
+        }
+        let node = self.get(id);
+        let var = replace.get(&node.var).copied().unwrap_or(node.var);
+        let high = self.replace(node.high, replace);
+        let low = self.replace(node.low, replace);
+        self.insert_node(BddNode::new(var, high, low))
+    }
+
     pub fn post_order(&self, id: BddId) -> Vec<BddId> {
         let mut post_order = Vec::new();
         let mut visited = HashSet::new();
