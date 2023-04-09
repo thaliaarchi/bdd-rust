@@ -1,5 +1,5 @@
 use std::collections::{hash_map::Entry, HashMap};
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{self, Debug, Display, Formatter, Write};
 
 use crate::{Exp, Var};
@@ -17,9 +17,9 @@ pub struct BddId(usize);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct BddNode {
-    var: Var,
-    high: BddId,
-    low: BddId,
+    pub var: Var,
+    pub high: BddId,
+    pub low: BddId,
 }
 
 impl BddId {
@@ -96,7 +96,7 @@ impl Bdd {
     }
 
     /// Get or insert the BDD for a node.
-    pub fn insert_node(&mut self, node: BddNode) -> BddId {
+    fn insert_node(&mut self, node: BddNode) -> BddId {
         if node.high == node.low {
             return node.high;
         }
@@ -236,20 +236,30 @@ impl Bdd {
     /// Display the BDD as a GraphViz directed graph.
     pub fn digraph(&self, w: &mut (dyn Write), id: BddId) -> fmt::Result {
         let reachable = self.reachable(id);
-        writeln!(w, "digraph bdd{} {{", id.0)?;
+        let mut ranks = BTreeMap::<Var, Vec<BddId>>::new();
+        writeln!(w, "digraph bdd{id} {{")?;
         for id in reachable {
             let node = self.get(id);
             if id.is_const() {
-                writeln!(w, "    node{} [shape=none, label={}];", id.0, id.0)?;
+                writeln!(w, "    node{id} [label={id}, shape=square];")?;
             } else {
                 writeln!(
                     w,
-                    "    node{} [shape=none, label=<{}<sup>{}</sup>>];",
-                    id.0, node.var, id.0,
+                    "    node{id} [label={}, xlabel={id}, shape=circle];",
+                    node.var
                 )?;
-                writeln!(w, "    node{} -> node{};", id.0, node.high.0)?;
-                writeln!(w, "    node{} -> node{} [style=dashed];", id.0, node.low.0)?;
+                writeln!(w, "    node{id} -> node{};", node.high)?;
+                writeln!(w, "    node{id} -> node{} [style=dashed];", node.low)?;
+                ranks.entry(node.var).or_default().push(id);
             }
+        }
+        writeln!(w)?;
+        for (_, nodes) in ranks {
+            write!(w, "    {{ rank=same; ")?;
+            for id in nodes {
+                write!(w, "node{id}; ")?;
+            }
+            writeln!(w, "}}")?;
         }
         writeln!(w, "}}")
     }
@@ -257,12 +267,18 @@ impl Bdd {
 
 impl Display for Bdd {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "| Var | High | Low | Id |\n")?;
-        write!(f, "| --- | ---- | --- | -- |\n")?;
+        writeln!(f, "| Var | High | Low | Id |")?;
+        writeln!(f, "| --- | ---- | --- | -- |")?;
         for (id, &BddNode { var, high, low }) in self.by_id.iter().enumerate() {
-            write!(f, "| {var} | {} | {} | {id} |\n", high.0, low.0)?;
+            writeln!(f, "| {var} | {high} | {low} | {id} |")?;
         }
         Ok(())
+    }
+}
+
+impl Display for BddId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
