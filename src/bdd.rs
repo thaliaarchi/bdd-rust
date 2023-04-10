@@ -193,9 +193,10 @@ impl Bdd {
         }
         let node = self.get(id);
         let var = replace.get(&node.var).copied().unwrap_or(node.var);
+        let var = self.insert_var(var);
         let high = self.replace(node.high, replace);
         let low = self.replace(node.low, replace);
-        self.insert_node(BddNode::new(var, high, low))
+        self.insert_ite(var, high, low)
     }
 
     pub fn post_order(&self, id: BddId) -> Vec<BddId> {
