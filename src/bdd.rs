@@ -288,7 +288,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn insert_exp() {
+    fn insert_exp_and_replace() {
         const A: usize = 0;
         const B: usize = 1;
         const C: usize = 2;
@@ -302,8 +302,8 @@ mod tests {
             Exp::and(Exp::and(Exp::var(B), Exp::not(Exp::var(C))), Exp::var(D)),
         );
         let mut bdd = Bdd::new(4);
-        bdd.insert_exp(&f);
-        let expected = vec![
+        let id = bdd.insert_exp(&f);
+        let mut expected = vec![
             BddNode::new(Var::ZERO, BddId::ZERO, BddId::ZERO), // 0
             BddNode::new(Var::ONE, BddId::ONE, BddId::ONE),    // 1
             BddNode::new(Var::new(A), BddId::new(1), BddId::new(0)), // 2
@@ -323,5 +323,25 @@ mod tests {
             BddNode::new(Var::new(A), BddId::new(3), BddId::new(15)), // 16
         ];
         assert_eq!(expected, bdd.by_id);
+        assert_eq!(BddId::new(16), id);
+
+        const E: usize = 4;
+        const F: usize = 5;
+        // (a ∧ b) ∨ (¬a ∧ f) ∨ (b ∧ ¬f ∧ e)
+        let mut replace = HashMap::new();
+        replace.insert(Var::new(C), Var::new(F));
+        replace.insert(Var::new(D), Var::new(E));
+        bdd.insert_var(Var::new(E));
+        bdd.insert_var(Var::new(F));
+        let replaced = bdd.replace(id, &replace);
+        expected.extend(&[
+            BddNode::new(Var::new(E), BddId::new(1), BddId::new(0)), // 17
+            BddNode::new(Var::new(F), BddId::new(1), BddId::new(0)), // 18
+            BddNode::new(Var::new(E), BddId::new(1), BddId::new(18)), // 19
+            BddNode::new(Var::new(B), BddId::new(19), BddId::new(18)), // 20
+            BddNode::new(Var::new(A), BddId::new(3), BddId::new(20)), // 21
+        ]);
+        assert_eq!(expected, bdd.by_id);
+        assert_eq!(BddId::new(21), replaced);
     }
 }
