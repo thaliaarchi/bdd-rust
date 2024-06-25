@@ -1,22 +1,28 @@
 use std::{
+    cmp::Ordering,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fmt::{self, Debug, Display, Formatter, Write},
 };
 
 use crate::{
     index_map::{IndexKey, IndexMap},
-    Exp, Var,
+    Exp,
 };
 
 /// A reduced ordered binary decision diagram (ROBDD).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Bdd {
     nodes: IndexMap<BddId, BddNode>,
+    vars: IndexMap<Var, String>,
 }
 
 /// A sub-graph of a `Bdd`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct BddId(u32);
+
+/// A boolean variable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Var(u32);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct BddNode {
@@ -26,16 +32,15 @@ pub struct BddNode {
 }
 
 impl Bdd {
-    /// Constructs a new `Bdd` initialized with the variables in the range
-    /// `0..vars`.
-    pub fn new(vars: usize) -> Self {
-        let mut nodes = IndexMap::with_capacity(vars.checked_add(2).unwrap());
+    /// Constructs a new, empty `Bdd`.
+    pub fn new() -> Self {
+        let mut nodes = IndexMap::new();
         nodes.insert(BddNode::new(Var::ZERO, BddId::ZERO, BddId::ZERO));
         nodes.insert(BddNode::new(Var::ONE, BddId::ONE, BddId::ONE));
-        for i in 0..vars {
-            nodes.insert(BddNode::new(Var::new(i), BddId::ONE, BddId::ZERO));
+        Bdd {
+            nodes,
+            vars: IndexMap::new(),
         }
-        Bdd { nodes }
     }
 
     /// Gets the node for the BDD id.
@@ -44,9 +49,21 @@ impl Bdd {
         self.nodes[id]
     }
 
+    fn get_var(&self, var: Var) -> &str {
+        match var.0 {
+            0 => "0",
+            1 => "1",
+            _ => &self.vars[var],
+        }
+    }
+
     /// Gets or inserts the BDD for a variable.
-    #[inline]
-    pub fn insert_var(&mut self, var: Var) -> BddId {
+    pub fn insert_var<S: Into<String>>(&mut self, ident: S) -> BddId {
+        let var = self.vars.insert(ident.into());
+        self.insert_var_id(var)
+    }
+
+    pub fn insert_var_id(&mut self, var: Var) -> BddId {
         self.nodes
             .insert(BddNode::new(var, BddId::ONE, BddId::ZERO))
     }
@@ -104,7 +121,7 @@ impl Bdd {
     /// Gets or inserts the BDD for an expression.
     pub fn insert_exp(&mut self, e: &Exp) -> BddId {
         match e {
-            Exp::Var(var) => self.insert_var(*var),
+            Exp::Var(var) => self.insert_var(var),
             Exp::Not(e) => {
                 let bdd_e = self.insert_exp(e);
                 self.insert_not(bdd_e)
@@ -130,7 +147,7 @@ impl Bdd {
         }
         let node = self.get(id);
         let var = replace.get(&node.var).copied().unwrap_or(node.var);
-        let var = self.insert_var(var);
+        let var = self.insert_var_id(var);
         let high = self.replace(node.high, replace);
         let low = self.replace(node.low, replace);
         self.insert_ite(var, high, low)
@@ -175,19 +192,21 @@ impl Bdd {
     pub fn digraph(&self, w: &mut dyn Write, id: BddId) -> fmt::Result {
         let reachable = self.reachable(id);
         let mut ranks = BTreeMap::<Var, Vec<BddId>>::new();
-        writeln!(w, "digraph bdd{id} {{")?;
+        writeln!(w, "digraph bdd{} {{", id.0)?;
         for id in reachable {
             let node = self.get(id);
             if id.is_const() {
-                writeln!(w, "    node{id} [label={id}, shape=square];")?;
+                writeln!(w, "    node{} [label={}, shape=square];", id.0, id.0)?;
             } else {
                 writeln!(
                     w,
-                    "    node{id} [label={}, xlabel={id}, shape=circle];",
-                    node.var,
+                    "    node{} [label={}, xlabel={}, shape=circle];",
+                    id.0,
+                    self.get_var(node.var),
+                    id.0,
                 )?;
-                writeln!(w, "    node{id} -> node{};", node.high)?;
-                writeln!(w, "    node{id} -> node{} [style=dashed];", node.low)?;
+                writeln!(w, "    node{} -> node{};", id.0, node.high.0)?;
+                writeln!(w, "    node{} -> node{} [style=dashed];", id.0, node.low.0)?;
                 ranks.entry(node.var).or_default().push(id);
             }
         }
@@ -195,7 +214,7 @@ impl Bdd {
         for (_, nodes) in ranks {
             write!(w, "    {{ rank=same; ")?;
             for id in nodes {
-                write!(w, "node{id}; ")?;
+                write!(w, "node{}; ", id.0)?;
             }
             writeln!(w, "}}")?;
         }
@@ -208,15 +227,16 @@ impl Display for Bdd {
         writeln!(f, "| Var | High | Low | Id |")?;
         writeln!(f, "| --- | ---- | --- | -- |")?;
         for (id, &BddNode { var, high, low }) in &self.nodes {
-            writeln!(f, "| {var} | {high} | {low} | {id} |")?;
+            writeln!(
+                f,
+                "| {} | {} | {} | {} |",
+                self.get_var(var),
+                high.0,
+                low.0,
+                id.0,
+            )?;
         }
         Ok(())
-    }
-}
-
-impl Display for BddId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
     }
 }
 
@@ -261,6 +281,41 @@ impl IndexKey for BddId {
     }
 }
 
+impl Var {
+    pub const ZERO: Var = Var(0);
+    pub const ONE: Var = Var(1);
+
+    #[cfg(test)]
+    fn new(var: usize) -> Self {
+        Var::from_usize(var)
+    }
+}
+
+impl IndexKey for Var {
+    fn from_usize(index: usize) -> Self {
+        Var(index as u32 + 2)
+    }
+
+    fn as_usize(&self) -> usize {
+        self.0 as usize - 2
+    }
+}
+
+impl PartialOrd for Var {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Var {
+    #[inline]
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Order variables first, then 0, then 1
+        self.0.wrapping_sub(2).cmp(&other.0.wrapping_sub(2))
+    }
+}
+
 impl BddNode {
     #[inline]
     fn new(var: Var, high: BddId, low: BddId) -> Self {
@@ -289,33 +344,37 @@ mod tests {
         const B: usize = 1;
         const C: usize = 2;
         const D: usize = 3;
+        let a = Exp::var("a");
+        let b = Exp::var("b");
+        let c = Exp::var("c");
+        let d = Exp::var("d");
         // (a ∧ b) ∨ (¬a ∧ c) ∨ (b ∧ ¬c ∧ d)
         let f = Exp::or(
             Exp::or(
-                Exp::and(Exp::var(A), Exp::var(B)),
-                Exp::and(Exp::not(Exp::var(A)), Exp::var(C)),
+                Exp::and(a.clone(), b.clone()),
+                Exp::and(Exp::not(a), c.clone()),
             ),
-            Exp::and(Exp::and(Exp::var(B), Exp::not(Exp::var(C))), Exp::var(D)),
+            Exp::and(Exp::and(b, Exp::not(c)), d),
         );
-        let mut bdd = Bdd::new(4);
+        let mut bdd = Bdd::new();
         let id = bdd.insert_exp(&f);
         let mut expected = vec![
             BddNode::new(Var::ZERO, BddId::ZERO, BddId::ZERO), // 0
             BddNode::new(Var::ONE, BddId::ONE, BddId::ONE),    // 1
             BddNode::new(Var::new(A), BddId::new(1), BddId::new(0)), // 2
             BddNode::new(Var::new(B), BddId::new(1), BddId::new(0)), // 3
-            BddNode::new(Var::new(C), BddId::new(1), BddId::new(0)), // 4
-            BddNode::new(Var::new(D), BddId::new(1), BddId::new(0)), // 5
-            BddNode::new(Var::new(A), BddId::new(3), BddId::new(0)), // 6
-            BddNode::new(Var::new(A), BddId::new(0), BddId::new(1)), // 7
-            BddNode::new(Var::new(A), BddId::new(0), BddId::new(4)), // 8
-            BddNode::new(Var::new(A), BddId::new(3), BddId::new(4)), // 9
-            BddNode::new(Var::new(C), BddId::new(0), BddId::new(1)), // 10
-            BddNode::new(Var::new(B), BddId::new(10), BddId::new(0)), // 11
-            BddNode::new(Var::new(C), BddId::new(0), BddId::new(5)), // 12
+            BddNode::new(Var::new(A), BddId::new(3), BddId::new(0)), // 4
+            BddNode::new(Var::new(A), BddId::new(0), BddId::new(1)), // 5
+            BddNode::new(Var::new(C), BddId::new(1), BddId::new(0)), // 6
+            BddNode::new(Var::new(A), BddId::new(0), BddId::new(6)), // 7
+            BddNode::new(Var::new(A), BddId::new(3), BddId::new(6)), // 8
+            BddNode::new(Var::new(C), BddId::new(0), BddId::new(1)), // 9
+            BddNode::new(Var::new(B), BddId::new(9), BddId::new(0)), // 10
+            BddNode::new(Var::new(D), BddId::new(1), BddId::new(0)), // 11
+            BddNode::new(Var::new(C), BddId::new(0), BddId::new(11)), // 12
             BddNode::new(Var::new(B), BddId::new(12), BddId::new(0)), // 13
-            BddNode::new(Var::new(C), BddId::new(1), BddId::new(5)), // 14
-            BddNode::new(Var::new(B), BddId::new(14), BddId::new(4)), // 15
+            BddNode::new(Var::new(C), BddId::new(1), BddId::new(11)), // 14
+            BddNode::new(Var::new(B), BddId::new(14), BddId::new(6)), // 15
             BddNode::new(Var::new(A), BddId::new(3), BddId::new(15)), // 16
         ];
         assert_eq!(bdd.nodes.values(), expected);
@@ -327,8 +386,8 @@ mod tests {
         let mut replace = HashMap::new();
         replace.insert(Var::new(C), Var::new(F));
         replace.insert(Var::new(D), Var::new(E));
-        bdd.insert_var(Var::new(E));
-        bdd.insert_var(Var::new(F));
+        bdd.insert_var("e");
+        bdd.insert_var("f");
         let replaced = bdd.replace(id, &replace);
         expected.extend(&[
             BddNode::new(Var::new(E), BddId::new(1), BddId::new(0)), // 17
