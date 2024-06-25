@@ -1,5 +1,7 @@
-use std::cmp::Ordering;
-use std::fmt::{self, Display, Formatter};
+use std::{
+    cmp::Ordering,
+    fmt::{self, Display, Formatter},
+};
 
 /// A boolean variable.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -56,7 +58,7 @@ impl PartialOrd for Var {
 impl Ord for Var {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
-        // Order variables first, then 0, then 1
+        // Order variables first, then 0, then 1.
         self.0.wrapping_sub(2).cmp(&other.0.wrapping_sub(2))
     }
 }

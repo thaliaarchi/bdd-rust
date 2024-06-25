@@ -1,6 +1,7 @@
-use std::collections::{hash_map::Entry, HashMap};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::fmt::{self, Debug, Display, Formatter, Write};
+use std::{
+    collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet},
+    fmt::{self, Debug, Display, Formatter, Write},
+};
 
 use crate::{Exp, Var};
 
@@ -22,59 +23,9 @@ pub struct BddNode {
     pub low: BddId,
 }
 
-impl BddId {
-    pub const ZERO: BddId = BddId(0);
-    pub const ONE: BddId = BddId(1);
-
-    #[inline]
-    fn new(id: usize) -> Self {
-        BddId(id)
-    }
-
-    #[inline]
-    fn as_usize(&self) -> usize {
-        self.0
-    }
-
-    /// Return whether the BDD is either 0 or 1.
-    #[inline]
-    pub fn is_const(&self) -> bool {
-        self.0 <= 1
-    }
-
-    /// Return whether the BDD is 0.
-    #[inline]
-    pub fn is_zero(&self) -> bool {
-        self.0 == 0
-    }
-
-    /// Return whether the BDD is 1.
-    #[inline]
-    pub fn is_one(&self) -> bool {
-        self.0 == 1
-    }
-}
-
-impl BddNode {
-    #[inline]
-    fn new(var: Var, high: BddId, low: BddId) -> Self {
-        BddNode { var, high, low }
-    }
-
-    /// Split into expressions `co1`, `co0`, that have `var` factored out, such
-    /// that `(var ∧ co1) ∨ (¬var ∧ co0)`.
-    #[inline]
-    fn cofactor(&self, self_id: BddId, var: Var) -> (BddId, BddId) {
-        if self.var == var {
-            (self.high, self.low)
-        } else {
-            (self_id, self_id)
-        }
-    }
-}
-
 impl Bdd {
-    /// Create a `Bdd` initialized with the variables in the range `0..vars`.
+    /// Constructs a new `Bdd` initialized with the variables in the range
+    /// `0..vars`.
     pub fn new(vars: usize) -> Self {
         let mut by_id = Vec::with_capacity(vars.checked_add(2).unwrap());
         by_id.push(BddNode::new(Var::ZERO, BddId::ZERO, BddId::ZERO));
@@ -89,13 +40,13 @@ impl Bdd {
         Bdd { by_id, by_node }
     }
 
-    /// Get the node for the BDD id.
+    /// Gets the node for the BDD id.
     #[inline]
     pub fn get(&self, id: BddId) -> BddNode {
         self.by_id[id.as_usize()]
     }
 
-    /// Get or insert the BDD for a node.
+    /// Gets or inserts the BDD for a node.
     fn insert_node(&mut self, node: BddNode) -> BddId {
         if node.high == node.low {
             return node.high;
@@ -111,31 +62,31 @@ impl Bdd {
         }
     }
 
-    /// Get or insert the BDD for a variable.
+    /// Gets or inserts the BDD for a variable.
     #[inline]
     pub fn insert_var(&mut self, var: Var) -> BddId {
         self.insert_node(BddNode::new(var, BddId::ONE, BddId::ZERO))
     }
 
-    /// Get or insert the BDD for a NOT expression.
+    /// Gets or inserts the BDD for a NOT expression.
     #[inline]
     pub fn insert_not(&mut self, bdd_e: BddId) -> BddId {
         self.insert_ite(bdd_e, BddId::ZERO, BddId::ONE)
     }
 
-    /// Get or insert the BDD for an AND expression.
+    /// Gets or inserts the BDD for an AND expression.
     #[inline]
     pub fn insert_and(&mut self, bdd_e1: BddId, bdd_e2: BddId) -> BddId {
         self.insert_ite(bdd_e1, bdd_e2, BddId::ZERO)
     }
 
-    /// Get or insert the BDD for an OR expression.
+    /// Gets or inserts the BDD for an OR expression.
     #[inline]
     pub fn insert_or(&mut self, bdd_e1: BddId, bdd_e2: BddId) -> BddId {
         self.insert_ite(bdd_e1, BddId::ONE, bdd_e2)
     }
 
-    /// Get or insert the BDD for an if-then-else expression.
+    /// Gets or inserts the BDD for an if-then-else expression.
     pub fn insert_ite(&mut self, bdd_if: BddId, bdd_then: BddId, bdd_else: BddId) -> BddId {
         // Terminal cases
         if bdd_then.is_one() && bdd_else.is_zero() {
@@ -164,7 +115,7 @@ impl Bdd {
         self.insert_node(BddNode::new(var, co1, co0))
     }
 
-    /// Get or insert the BDD for an expression.
+    /// Gets or inserts the BDD for an expression.
     pub fn insert_exp(&mut self, e: &Exp) -> BddId {
         match e {
             Exp::Var(var) => self.insert_var(*var),
@@ -185,7 +136,7 @@ impl Bdd {
         }
     }
 
-    /// Create a new BDD from `id` with the variables replaced according to the
+    /// Creates a new BDD from `id` with the variables replaced according to the
     /// mappings in `replace`.
     pub fn replace(&mut self, id: BddId, replace: &HashMap<Var, Var>) -> BddId {
         if id.is_const() {
@@ -234,8 +185,8 @@ impl Bdd {
         }
     }
 
-    /// Display the BDD as a GraphViz directed graph.
-    pub fn digraph(&self, w: &mut (dyn Write), id: BddId) -> fmt::Result {
+    /// Displays the BDD as a GraphViz directed graph.
+    pub fn digraph(&self, w: &mut dyn Write, id: BddId) -> fmt::Result {
         let reachable = self.reachable(id);
         let mut ranks = BTreeMap::<Var, Vec<BddId>>::new();
         writeln!(w, "digraph bdd{id} {{")?;
@@ -247,7 +198,7 @@ impl Bdd {
                 writeln!(
                     w,
                     "    node{id} [label={}, xlabel={id}, shape=circle];",
-                    node.var
+                    node.var,
                 )?;
                 writeln!(w, "    node{id} -> node{};", node.high)?;
                 writeln!(w, "    node{id} -> node{} [style=dashed];", node.low)?;
@@ -280,6 +231,57 @@ impl Display for Bdd {
 impl Display for BddId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl BddId {
+    pub const ZERO: BddId = BddId(0);
+    pub const ONE: BddId = BddId(1);
+
+    #[inline]
+    fn new(id: usize) -> Self {
+        BddId(id)
+    }
+
+    #[inline]
+    fn as_usize(&self) -> usize {
+        self.0
+    }
+
+    /// Returns whether the BDD is either 0 or 1.
+    #[inline]
+    pub fn is_const(&self) -> bool {
+        self.0 <= 1
+    }
+
+    /// Returns whether the BDD is 0.
+    #[inline]
+    pub fn is_zero(&self) -> bool {
+        self.0 == 0
+    }
+
+    /// Returns whether the BDD is 1.
+    #[inline]
+    pub fn is_one(&self) -> bool {
+        self.0 == 1
+    }
+}
+
+impl BddNode {
+    #[inline]
+    fn new(var: Var, high: BddId, low: BddId) -> Self {
+        BddNode { var, high, low }
+    }
+
+    /// Splits into expressions `co1`, `co0`, that have `var` factored out, such
+    /// that `(var ∧ co1) ∨ (¬var ∧ co0)`.
+    #[inline]
+    fn cofactor(&self, self_id: BddId, var: Var) -> (BddId, BddId) {
+        if self.var == var {
+            (self.high, self.low)
+        } else {
+            (self_id, self_id)
+        }
     }
 }
 
@@ -322,8 +324,8 @@ mod tests {
             BddNode::new(Var::new(B), BddId::new(14), BddId::new(4)), // 15
             BddNode::new(Var::new(A), BddId::new(3), BddId::new(15)), // 16
         ];
-        assert_eq!(expected, bdd.by_id);
-        assert_eq!(BddId::new(16), id);
+        assert_eq!(bdd.by_id, expected);
+        assert_eq!(id, BddId::new(16));
 
         const E: usize = 4;
         const F: usize = 5;
@@ -341,7 +343,7 @@ mod tests {
             BddNode::new(Var::new(B), BddId::new(19), BddId::new(18)), // 20
             BddNode::new(Var::new(A), BddId::new(3), BddId::new(20)), // 21
         ]);
-        assert_eq!(expected, bdd.by_id);
-        assert_eq!(BddId::new(21), replaced);
+        assert_eq!(bdd.by_id, expected);
+        assert_eq!(replaced, BddId::new(21));
     }
 }
