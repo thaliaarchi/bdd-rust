@@ -31,6 +31,13 @@ pub struct BddNode {
     pub low: BddId,
 }
 
+/// A mapping for replacing variables in a BDD.
+#[derive(Debug)]
+pub struct VarReplaceMap<'bdd> {
+    bdd: &'bdd mut Bdd,
+    replace: HashMap<Var, Var>,
+}
+
 impl Bdd {
     /// Constructs a new, empty `Bdd`.
     pub fn new() -> Self {
@@ -139,17 +146,25 @@ impl Bdd {
         }
     }
 
+    /// Creates a map, which can be used to replace variables in this BDD.
+    pub fn replace_vars(&mut self) -> VarReplaceMap<'_> {
+        VarReplaceMap {
+            bdd: self,
+            replace: HashMap::new(),
+        }
+    }
+
     /// Creates a new BDD from `id` with the variables replaced according to the
     /// mappings in `replace`.
-    pub fn replace(&mut self, id: BddId, replace: &HashMap<Var, Var>) -> BddId {
+    fn insert_replace(&mut self, id: BddId, replace: &HashMap<Var, Var>) -> BddId {
         if id.is_const() {
             return id;
         }
         let node = self.get(id);
         let var = replace.get(&node.var).copied().unwrap_or(node.var);
         let var = self.insert_var_id(var);
-        let high = self.replace(node.high, replace);
-        let low = self.replace(node.low, replace);
+        let high = self.insert_replace(node.high, replace);
+        let low = self.insert_replace(node.low, replace);
         self.insert_ite(var, high, low)
     }
 
@@ -284,11 +299,6 @@ impl IndexKey for BddId {
 impl Var {
     pub const ZERO: Var = Var(0);
     pub const ONE: Var = Var(1);
-
-    #[cfg(test)]
-    fn new(var: usize) -> Self {
-        Var::from_usize(var)
-    }
 }
 
 impl IndexKey for Var {
@@ -334,16 +344,27 @@ impl BddNode {
     }
 }
 
+impl<'bdd> VarReplaceMap<'bdd> {
+    /// Inserts a mapping from `original` to `replacement`.
+    pub fn insert<S: Into<String>>(&mut self, original: S, replacement: S) {
+        let original = self.bdd.vars.insert(original.into());
+        let replacement = self.bdd.vars.insert(replacement.into());
+        self.replace.insert(original, replacement);
+    }
+
+    /// Creates a new BDD from `id` with the variables replaced according to
+    /// this mapping.
+    pub fn replace(&mut self, id: BddId) -> BddId {
+        self.bdd.insert_replace(id, &mut self.replace)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn insert_exp_and_replace() {
-        const A: usize = 0;
-        const B: usize = 1;
-        const C: usize = 2;
-        const D: usize = 3;
         let a = Exp::var("a");
         let b = Exp::var("b");
         let c = Exp::var("c");
@@ -358,43 +379,45 @@ mod tests {
         );
         let mut bdd = Bdd::new();
         let id = bdd.insert_exp(&f);
+        let a = Var::from_usize(0);
+        let b = Var::from_usize(1);
+        let c = Var::from_usize(2);
+        let d = Var::from_usize(3);
         let mut expected = vec![
             BddNode::new(Var::ZERO, BddId::ZERO, BddId::ZERO), // 0
             BddNode::new(Var::ONE, BddId::ONE, BddId::ONE),    // 1
-            BddNode::new(Var::new(A), BddId::new(1), BddId::new(0)), // 2
-            BddNode::new(Var::new(B), BddId::new(1), BddId::new(0)), // 3
-            BddNode::new(Var::new(A), BddId::new(3), BddId::new(0)), // 4
-            BddNode::new(Var::new(A), BddId::new(0), BddId::new(1)), // 5
-            BddNode::new(Var::new(C), BddId::new(1), BddId::new(0)), // 6
-            BddNode::new(Var::new(A), BddId::new(0), BddId::new(6)), // 7
-            BddNode::new(Var::new(A), BddId::new(3), BddId::new(6)), // 8
-            BddNode::new(Var::new(C), BddId::new(0), BddId::new(1)), // 9
-            BddNode::new(Var::new(B), BddId::new(9), BddId::new(0)), // 10
-            BddNode::new(Var::new(D), BddId::new(1), BddId::new(0)), // 11
-            BddNode::new(Var::new(C), BddId::new(0), BddId::new(11)), // 12
-            BddNode::new(Var::new(B), BddId::new(12), BddId::new(0)), // 13
-            BddNode::new(Var::new(C), BddId::new(1), BddId::new(11)), // 14
-            BddNode::new(Var::new(B), BddId::new(14), BddId::new(6)), // 15
-            BddNode::new(Var::new(A), BddId::new(3), BddId::new(15)), // 16
+            BddNode::new(a, BddId::new(1), BddId::new(0)),     // 2
+            BddNode::new(b, BddId::new(1), BddId::new(0)),     // 3
+            BddNode::new(a, BddId::new(3), BddId::new(0)),     // 4
+            BddNode::new(a, BddId::new(0), BddId::new(1)),     // 5
+            BddNode::new(c, BddId::new(1), BddId::new(0)),     // 6
+            BddNode::new(a, BddId::new(0), BddId::new(6)),     // 7
+            BddNode::new(a, BddId::new(3), BddId::new(6)),     // 8
+            BddNode::new(c, BddId::new(0), BddId::new(1)),     // 9
+            BddNode::new(b, BddId::new(9), BddId::new(0)),     // 10
+            BddNode::new(d, BddId::new(1), BddId::new(0)),     // 11
+            BddNode::new(c, BddId::new(0), BddId::new(11)),    // 12
+            BddNode::new(b, BddId::new(12), BddId::new(0)),    // 13
+            BddNode::new(c, BddId::new(1), BddId::new(11)),    // 14
+            BddNode::new(b, BddId::new(14), BddId::new(6)),    // 15
+            BddNode::new(a, BddId::new(3), BddId::new(15)),    // 16
         ];
         assert_eq!(bdd.nodes.values(), expected);
         assert_eq!(id, BddId::new(16));
 
-        const E: usize = 4;
-        const F: usize = 5;
         // (a ∧ b) ∨ (¬a ∧ f) ∨ (b ∧ ¬f ∧ e)
-        let mut replace = HashMap::new();
-        replace.insert(Var::new(C), Var::new(F));
-        replace.insert(Var::new(D), Var::new(E));
-        bdd.insert_var("e");
-        bdd.insert_var("f");
-        let replaced = bdd.replace(id, &replace);
+        let mut map = bdd.replace_vars();
+        map.insert("d", "e");
+        map.insert("c", "f");
+        let e = Var::from_usize(4);
+        let f = Var::from_usize(5);
+        let replaced = map.replace(id);
         expected.extend(&[
-            BddNode::new(Var::new(E), BddId::new(1), BddId::new(0)), // 17
-            BddNode::new(Var::new(F), BddId::new(1), BddId::new(0)), // 18
-            BddNode::new(Var::new(E), BddId::new(1), BddId::new(18)), // 19
-            BddNode::new(Var::new(B), BddId::new(19), BddId::new(18)), // 20
-            BddNode::new(Var::new(A), BddId::new(3), BddId::new(20)), // 21
+            BddNode::new(f, BddId::new(1), BddId::new(0)),   // 17
+            BddNode::new(e, BddId::new(1), BddId::new(0)),   // 18
+            BddNode::new(e, BddId::new(1), BddId::new(17)),  // 19
+            BddNode::new(b, BddId::new(19), BddId::new(17)), // 20
+            BddNode::new(a, BddId::new(3), BddId::new(20)),  // 21
         ]);
         assert_eq!(bdd.nodes.values(), expected);
         assert_eq!(replaced, BddId::new(21));
