@@ -4,10 +4,7 @@ use std::{
     fmt::{self, Debug, Display, Formatter, Write},
 };
 
-use crate::{
-    index_map::{IndexKey, IndexMap},
-    Exp,
-};
+use crate::index_map::{IndexKey, IndexMap};
 
 /// A reduced ordered binary decision diagram (ROBDD).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -93,6 +90,13 @@ impl Bdd {
         self.insert_ite(bdd_e1, BddId::ONE, bdd_e2)
     }
 
+    /// Gets or inserts the BDD for an XOR expression.
+    #[inline]
+    pub fn insert_xor(&mut self, bdd_e1: BddId, bdd_e2: BddId) -> BddId {
+        let bdd_e2_not = self.insert_not(bdd_e2);
+        self.insert_ite(bdd_e1, bdd_e2_not, bdd_e2)
+    }
+
     /// Gets or inserts the BDD for an if-then-else expression.
     pub fn insert_ite(&mut self, bdd_if: BddId, bdd_then: BddId, bdd_else: BddId) -> BddId {
         // Terminal cases
@@ -123,27 +127,6 @@ impl Bdd {
             return co1;
         }
         self.nodes.insert(BddNode::new(var, co1, co0))
-    }
-
-    /// Gets or inserts the BDD for an expression.
-    pub fn insert_exp(&mut self, e: &Exp) -> BddId {
-        match e {
-            Exp::Var(var) => self.insert_var(var),
-            Exp::Not(e) => {
-                let bdd_e = self.insert_exp(e);
-                self.insert_not(bdd_e)
-            }
-            Exp::And(e1, e2) => {
-                let bdd_e1 = self.insert_exp(e1);
-                let bdd_e2 = self.insert_exp(e2);
-                self.insert_and(bdd_e1, bdd_e2)
-            }
-            Exp::Or(e1, e2) => {
-                let bdd_e1 = self.insert_exp(e1);
-                let bdd_e2 = self.insert_exp(e2);
-                self.insert_or(bdd_e1, bdd_e2)
-            }
-        }
     }
 
     /// Creates a map, which can be used to replace variables in this BDD.
@@ -361,6 +344,8 @@ impl<'bdd> VarReplaceMap<'bdd> {
 
 #[cfg(test)]
 mod tests {
+    use crate::Exp;
+
     use super::*;
 
     #[test]
