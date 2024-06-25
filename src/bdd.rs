@@ -1,20 +1,22 @@
 use std::{
-    collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fmt::{self, Debug, Display, Formatter, Write},
 };
 
-use crate::{Exp, Var};
+use crate::{
+    index_map::{IndexKey, IndexMap},
+    Exp, Var,
+};
 
 /// A reduced ordered binary decision diagram (ROBDD).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Bdd {
-    by_id: Vec<BddNode>,
-    by_node: HashMap<BddNode, BddId>,
+    nodes: IndexMap<BddId, BddNode>,
 }
 
 /// A sub-graph of a `Bdd`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct BddId(usize);
+pub struct BddId(u32);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct BddNode {
@@ -27,45 +29,26 @@ impl Bdd {
     /// Constructs a new `Bdd` initialized with the variables in the range
     /// `0..vars`.
     pub fn new(vars: usize) -> Self {
-        let mut by_id = Vec::with_capacity(vars.checked_add(2).unwrap());
-        by_id.push(BddNode::new(Var::ZERO, BddId::ZERO, BddId::ZERO));
-        by_id.push(BddNode::new(Var::ONE, BddId::ONE, BddId::ONE));
+        let mut nodes = IndexMap::with_capacity(vars.checked_add(2).unwrap());
+        nodes.insert(BddNode::new(Var::ZERO, BddId::ZERO, BddId::ZERO));
+        nodes.insert(BddNode::new(Var::ONE, BddId::ONE, BddId::ONE));
         for i in 0..vars {
-            by_id.push(BddNode::new(Var::new(i), BddId::ONE, BddId::ZERO));
+            nodes.insert(BddNode::new(Var::new(i), BddId::ONE, BddId::ZERO));
         }
-        let mut by_node = HashMap::with_capacity(by_id.len());
-        for (i, &node) in by_id.iter().enumerate() {
-            by_node.insert(node, BddId(i));
-        }
-        Bdd { by_id, by_node }
+        Bdd { nodes }
     }
 
     /// Gets the node for the BDD id.
     #[inline]
     pub fn get(&self, id: BddId) -> BddNode {
-        self.by_id[id.as_usize()]
-    }
-
-    /// Gets or inserts the BDD for a node.
-    fn insert_node(&mut self, node: BddNode) -> BddId {
-        if node.high == node.low {
-            return node.high;
-        }
-        match self.by_node.entry(node) {
-            Entry::Occupied(entry) => *entry.get(),
-            Entry::Vacant(entry) => {
-                let id = BddId::new(self.by_id.len());
-                self.by_id.push(node);
-                entry.insert(id);
-                id
-            }
-        }
+        self.nodes[id]
     }
 
     /// Gets or inserts the BDD for a variable.
     #[inline]
     pub fn insert_var(&mut self, var: Var) -> BddId {
-        self.insert_node(BddNode::new(var, BddId::ONE, BddId::ZERO))
+        self.nodes
+            .insert(BddNode::new(var, BddId::ONE, BddId::ZERO))
     }
 
     /// Gets or inserts the BDD for a NOT expression.
@@ -112,7 +95,10 @@ impl Bdd {
         let co0 = self.insert_ite(co0_if, co0_then, co0_else);
 
         // Insert the resulting node
-        self.insert_node(BddNode::new(var, co1, co0))
+        if co1 == co0 {
+            return co1;
+        }
+        self.nodes.insert(BddNode::new(var, co1, co0))
     }
 
     /// Gets or inserts the BDD for an expression.
@@ -221,7 +207,7 @@ impl Display for Bdd {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         writeln!(f, "| Var | High | Low | Id |")?;
         writeln!(f, "| --- | ---- | --- | -- |")?;
-        for (id, &BddNode { var, high, low }) in self.by_id.iter().enumerate() {
+        for (id, &BddNode { var, high, low }) in &self.nodes {
             writeln!(f, "| {var} | {high} | {low} | {id} |")?;
         }
         Ok(())
@@ -238,14 +224,10 @@ impl BddId {
     pub const ZERO: BddId = BddId(0);
     pub const ONE: BddId = BddId(1);
 
+    #[cfg(test)]
     #[inline]
     fn new(id: usize) -> Self {
-        BddId(id)
-    }
-
-    #[inline]
-    fn as_usize(&self) -> usize {
-        self.0
+        BddId::from_usize(id)
     }
 
     /// Returns whether the BDD is either 0 or 1.
@@ -264,6 +246,18 @@ impl BddId {
     #[inline]
     pub fn is_one(&self) -> bool {
         self.0 == 1
+    }
+}
+
+impl IndexKey for BddId {
+    #[inline]
+    fn from_usize(index: usize) -> Self {
+        BddId(index as u32)
+    }
+
+    #[inline]
+    fn as_usize(&self) -> usize {
+        self.0 as usize
     }
 }
 
@@ -324,7 +318,7 @@ mod tests {
             BddNode::new(Var::new(B), BddId::new(14), BddId::new(4)), // 15
             BddNode::new(Var::new(A), BddId::new(3), BddId::new(15)), // 16
         ];
-        assert_eq!(bdd.by_id, expected);
+        assert_eq!(bdd.nodes.values(), expected);
         assert_eq!(id, BddId::new(16));
 
         const E: usize = 4;
@@ -343,7 +337,7 @@ mod tests {
             BddNode::new(Var::new(B), BddId::new(19), BddId::new(18)), // 20
             BddNode::new(Var::new(A), BddId::new(3), BddId::new(20)), // 21
         ]);
-        assert_eq!(bdd.by_id, expected);
+        assert_eq!(bdd.nodes.values(), expected);
         assert_eq!(replaced, BddId::new(21));
     }
 }
