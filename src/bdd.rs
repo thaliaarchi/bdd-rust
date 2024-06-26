@@ -208,7 +208,9 @@ impl Bdd {
                 ranks.entry(node.var).or_default().push(id);
             }
         }
-        writeln!(w)?;
+        if !ranks.is_empty() {
+            writeln!(w)?;
+        }
         for (_, nodes) in ranks {
             write!(w, "    {{ rank=same; ")?;
             for id in nodes {
