@@ -41,7 +41,7 @@ impl Exp {
 
 impl Bdd {
     /// Gets or inserts the BDD for an expression.
-    pub fn insert_exp(&mut self, e: &Exp) -> BddId {
+    pub fn insert_exp(&self, e: &Exp) -> BddId {
         match e {
             Exp::Var(var) => self.insert_var(var),
             Exp::Not(e) => {

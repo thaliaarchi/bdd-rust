@@ -31,14 +31,14 @@ pub struct BddNode {
 /// A mapping for replacing variables in a BDD.
 #[derive(Debug)]
 pub struct VarReplaceMap<'bdd> {
-    bdd: &'bdd mut Bdd,
+    bdd: &'bdd Bdd,
     replace: HashMap<Var, Var>,
 }
 
 impl Bdd {
     /// Constructs a new, empty `Bdd`.
     pub fn new() -> Self {
-        let mut nodes = IndexMap::new();
+        let nodes = IndexMap::new();
         nodes.insert(BddNode::new(Var::ZERO, BddId::ZERO, BddId::ZERO));
         nodes.insert(BddNode::new(Var::ONE, BddId::ONE, BddId::ONE));
         Bdd {
@@ -50,55 +50,55 @@ impl Bdd {
     /// Gets the node for the BDD id.
     #[inline]
     pub fn get(&self, id: BddId) -> BddNode {
-        self.nodes[id]
+        self.nodes.get_cloned(id)
     }
 
     fn get_var(&self, var: Var) -> &str {
         match var.0 {
             0 => "0",
             1 => "1",
-            _ => &self.vars[var],
+            _ => self.vars.get_deref(var),
         }
     }
 
     /// Gets or inserts the BDD for a variable.
-    pub fn insert_var<S: Into<String>>(&mut self, ident: S) -> BddId {
+    pub fn insert_var<S: Into<String>>(&self, ident: S) -> BddId {
         let var = self.vars.insert(ident.into());
         self.insert_var_id(var)
     }
 
-    pub fn insert_var_id(&mut self, var: Var) -> BddId {
+    pub fn insert_var_id(&self, var: Var) -> BddId {
         self.nodes
             .insert(BddNode::new(var, BddId::ONE, BddId::ZERO))
     }
 
     /// Gets or inserts the BDD for a NOT expression.
     #[inline]
-    pub fn insert_not(&mut self, bdd_e: BddId) -> BddId {
+    pub fn insert_not(&self, bdd_e: BddId) -> BddId {
         self.insert_ite(bdd_e, BddId::ZERO, BddId::ONE)
     }
 
     /// Gets or inserts the BDD for an AND expression.
     #[inline]
-    pub fn insert_and(&mut self, bdd_e1: BddId, bdd_e2: BddId) -> BddId {
+    pub fn insert_and(&self, bdd_e1: BddId, bdd_e2: BddId) -> BddId {
         self.insert_ite(bdd_e1, bdd_e2, BddId::ZERO)
     }
 
     /// Gets or inserts the BDD for an OR expression.
     #[inline]
-    pub fn insert_or(&mut self, bdd_e1: BddId, bdd_e2: BddId) -> BddId {
+    pub fn insert_or(&self, bdd_e1: BddId, bdd_e2: BddId) -> BddId {
         self.insert_ite(bdd_e1, BddId::ONE, bdd_e2)
     }
 
     /// Gets or inserts the BDD for an XOR expression.
     #[inline]
-    pub fn insert_xor(&mut self, bdd_e1: BddId, bdd_e2: BddId) -> BddId {
+    pub fn insert_xor(&self, bdd_e1: BddId, bdd_e2: BddId) -> BddId {
         let bdd_e2_not = self.insert_not(bdd_e2);
         self.insert_ite(bdd_e1, bdd_e2_not, bdd_e2)
     }
 
     /// Gets or inserts the BDD for an if-then-else expression.
-    pub fn insert_ite(&mut self, bdd_if: BddId, bdd_then: BddId, bdd_else: BddId) -> BddId {
+    pub fn insert_ite(&self, bdd_if: BddId, bdd_then: BddId, bdd_else: BddId) -> BddId {
         // Terminal cases
         if bdd_then.is_one() && bdd_else.is_zero() {
             return bdd_if;
@@ -130,7 +130,7 @@ impl Bdd {
     }
 
     /// Creates a map, which can be used to replace variables in this BDD.
-    pub fn replace_vars(&mut self) -> VarReplaceMap<'_> {
+    pub fn replace_vars(&self) -> VarReplaceMap<'_> {
         VarReplaceMap {
             bdd: self,
             replace: HashMap::new(),
@@ -139,7 +139,7 @@ impl Bdd {
 
     /// Creates a new BDD from `id` with the variables replaced according to the
     /// mappings in `replace`.
-    fn insert_replace(&mut self, id: BddId, replace: &HashMap<Var, Var>) -> BddId {
+    fn insert_replace(&self, id: BddId, replace: &HashMap<Var, Var>) -> BddId {
         if id.is_const() {
             return id;
         }
@@ -226,7 +226,7 @@ impl Display for Bdd {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         writeln!(f, "| Var | High | Low | Id |")?;
         writeln!(f, "| --- | ---- | --- | -- |")?;
-        for (id, &BddNode { var, high, low }) in &self.nodes {
+        for (id, BddNode { var, high, low }) in self.nodes.iter_cloned() {
             writeln!(
                 f,
                 "| {} | {} | {} | {} |",
@@ -339,8 +339,8 @@ impl<'bdd> VarReplaceMap<'bdd> {
 
     /// Creates a new BDD from `id` with the variables replaced according to
     /// this mapping.
-    pub fn replace(&mut self, id: BddId) -> BddId {
-        self.bdd.insert_replace(id, &mut self.replace)
+    pub fn replace(&self, id: BddId) -> BddId {
+        self.bdd.insert_replace(id, &self.replace)
     }
 }
 
@@ -364,7 +364,7 @@ mod tests {
             ),
             Exp::and(Exp::and(b, Exp::not(c)), d),
         );
-        let mut bdd = Bdd::new();
+        let bdd = Bdd::new();
         let id = bdd.insert_exp(&f);
         let a = Var::from_usize(0);
         let b = Var::from_usize(1);
@@ -389,7 +389,7 @@ mod tests {
             BddNode::new(b, BddId::new(14), BddId::new(6)),    // 15
             BddNode::new(a, BddId::new(3), BddId::new(15)),    // 16
         ];
-        assert_eq!(bdd.nodes.values(), expected);
+        assert_eq!(bdd.nodes, *expected);
         assert_eq!(id, BddId::new(16));
 
         // (a ∧ b) ∨ (¬a ∧ f) ∨ (b ∧ ¬f ∧ e)
@@ -406,7 +406,7 @@ mod tests {
             BddNode::new(b, BddId::new(19), BddId::new(17)), // 20
             BddNode::new(a, BddId::new(3), BddId::new(20)),  // 21
         ]);
-        assert_eq!(bdd.nodes.values(), expected);
+        assert_eq!(bdd.nodes, *expected);
         assert_eq!(replaced, BddId::new(21));
     }
 }
