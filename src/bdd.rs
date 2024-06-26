@@ -213,11 +213,15 @@ impl<'mgr> Bdd<'mgr> {
         unsafe { self.mgr.nodes.get_cloned_unchecked(self.id) }
     }
 
+    #[inline]
     pub(crate) fn assert_manager(&self, other: Bdd<'mgr>) {
-        assert_eq!(
-            self.mgr as *const BddManager, other.mgr as *const BddManager,
-            "combining BDDs from different managers",
-        );
+        #[inline(never)]
+        fn manager_error() -> ! {
+            panic!("mixed BDDs from different managers");
+        }
+        if self.mgr as *const BddManager != other.mgr as *const BddManager {
+            manager_error();
+        }
     }
 }
 
