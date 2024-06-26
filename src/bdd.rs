@@ -372,26 +372,18 @@ impl<'bdd> VarReplaceMap<'bdd> {
 
 #[cfg(test)]
 mod tests {
-    use crate::Exp;
-
     use super::*;
 
     #[test]
-    fn insert_exp_and_replace() {
-        let a = Exp::var("a");
-        let b = Exp::var("b");
-        let c = Exp::var("c");
-        let d = Exp::var("d");
-        // (a ∧ b) ∨ (¬a ∧ c) ∨ (b ∧ ¬c ∧ d)
-        let f = Exp::or(
-            Exp::or(
-                Exp::and(a.clone(), b.clone()),
-                Exp::and(Exp::not(a), c.clone()),
-            ),
-            Exp::and(Exp::and(b, Exp::not(c)), d),
-        );
+    fn insert_and_replace() {
         let mgr = BddManager::new();
-        let bdd = mgr.insert_exp(&f);
+        // Insert variables first to guarantee order.
+        let a = mgr.insert_var("a");
+        let b = mgr.insert_var("b");
+        let c = mgr.insert_var("c");
+        let d = mgr.insert_var("d");
+        let bdd = (a & b) | (!a & c) | (b & !c & d);
+
         let a = Var::from_usize(0);
         let b = Var::from_usize(1);
         let c = Var::from_usize(2);
@@ -401,35 +393,38 @@ mod tests {
             BddIte::new(Var::ONE, BddId::ONE, BddId::ONE),    // 1
             BddIte::new(a, BddId::from_usize(1), BddId::from_usize(0)), // 2
             BddIte::new(b, BddId::from_usize(1), BddId::from_usize(0)), // 3
-            BddIte::new(a, BddId::from_usize(3), BddId::from_usize(0)), // 4
-            BddIte::new(a, BddId::from_usize(0), BddId::from_usize(1)), // 5
-            BddIte::new(c, BddId::from_usize(1), BddId::from_usize(0)), // 6
-            BddIte::new(a, BddId::from_usize(0), BddId::from_usize(6)), // 7
-            BddIte::new(a, BddId::from_usize(3), BddId::from_usize(6)), // 8
-            BddIte::new(c, BddId::from_usize(0), BddId::from_usize(1)), // 9
-            BddIte::new(b, BddId::from_usize(9), BddId::from_usize(0)), // 10
-            BddIte::new(d, BddId::from_usize(1), BddId::from_usize(0)), // 11
-            BddIte::new(c, BddId::from_usize(0), BddId::from_usize(11)), // 12
+            BddIte::new(c, BddId::from_usize(1), BddId::from_usize(0)), // 4
+            BddIte::new(d, BddId::from_usize(1), BddId::from_usize(0)), // 5
+            BddIte::new(a, BddId::from_usize(3), BddId::from_usize(0)), // 6
+            BddIte::new(a, BddId::from_usize(0), BddId::from_usize(1)), // 7
+            BddIte::new(a, BddId::from_usize(0), BddId::from_usize(4)), // 8
+            BddIte::new(a, BddId::from_usize(3), BddId::from_usize(4)), // 9
+            BddIte::new(c, BddId::from_usize(0), BddId::from_usize(1)), // 10
+            BddIte::new(b, BddId::from_usize(10), BddId::from_usize(0)), // 11
+            BddIte::new(c, BddId::from_usize(0), BddId::from_usize(5)), // 12
             BddIte::new(b, BddId::from_usize(12), BddId::from_usize(0)), // 13
-            BddIte::new(c, BddId::from_usize(1), BddId::from_usize(11)), // 14
-            BddIte::new(b, BddId::from_usize(14), BddId::from_usize(6)), // 15
+            BddIte::new(c, BddId::from_usize(1), BddId::from_usize(5)), // 14
+            BddIte::new(b, BddId::from_usize(14), BddId::from_usize(4)), // 15
             BddIte::new(a, BddId::from_usize(3), BddId::from_usize(15)), // 16
         ];
         assert_eq!(mgr.nodes, *expected);
         assert_eq!(bdd.id(), BddId::from_usize(16));
 
-        // (a ∧ b) ∨ (¬a ∧ f) ∨ (b ∧ ¬f ∧ e)
+        // (a & b) | (!a & f) | (b & !f & e)
+        mgr.insert_var("e");
+        mgr.insert_var("f");
         let mut map = mgr.replace_vars();
-        map.insert("d", "e");
         map.insert("c", "f");
+        map.insert("d", "e");
+        let replaced = map.replace(bdd.id());
+
         let e = Var::from_usize(4);
         let f = Var::from_usize(5);
-        let replaced = map.replace(bdd.id());
         expected.extend(&[
-            BddIte::new(f, BddId::from_usize(1), BddId::from_usize(0)), // 17
-            BddIte::new(e, BddId::from_usize(1), BddId::from_usize(0)), // 18
-            BddIte::new(e, BddId::from_usize(1), BddId::from_usize(17)), // 19
-            BddIte::new(b, BddId::from_usize(19), BddId::from_usize(17)), // 20
+            BddIte::new(e, BddId::from_usize(1), BddId::from_usize(0)), // 17
+            BddIte::new(f, BddId::from_usize(1), BddId::from_usize(0)), // 18
+            BddIte::new(e, BddId::from_usize(1), BddId::from_usize(18)), // 19
+            BddIte::new(b, BddId::from_usize(19), BddId::from_usize(18)), // 20
             BddIte::new(a, BddId::from_usize(3), BddId::from_usize(20)), // 21
         ]);
         assert_eq!(mgr.nodes, *expected);

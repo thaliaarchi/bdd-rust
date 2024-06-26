@@ -4,22 +4,22 @@ use crate::{Bdd, BddId, BddManager};
 
 impl BddManager {
     /// Gets or inserts the BDD for a NOT expression.
-    pub(crate) fn insert_not(&self, e: BddId) -> BddId {
+    fn insert_not(&self, e: BddId) -> BddId {
         self.insert_ite(e, BddId::ZERO, BddId::ONE)
     }
 
     /// Gets or inserts the BDD for an AND expression.
-    pub(crate) fn insert_and(&self, e1: BddId, e2: BddId) -> BddId {
+    fn insert_and(&self, e1: BddId, e2: BddId) -> BddId {
         self.insert_ite(e1, e2, BddId::ZERO)
     }
 
     /// Gets or inserts the BDD for an OR expression.
-    pub(crate) fn insert_or(&self, e1: BddId, e2: BddId) -> BddId {
+    fn insert_or(&self, e1: BddId, e2: BddId) -> BddId {
         self.insert_ite(e1, BddId::ONE, e2)
     }
 
     /// Gets or inserts the BDD for an XOR expression.
-    pub(crate) fn insert_xor(&self, e1: BddId, e2: BddId) -> BddId {
+    fn insert_xor(&self, e1: BddId, e2: BddId) -> BddId {
         let not_e2 = self.insert_not(e2);
         self.insert_ite(e1, not_e2, e2)
     }
