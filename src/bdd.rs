@@ -1,8 +1,4 @@
-use std::{
-    cmp::Ordering,
-    collections::{BTreeMap, BTreeSet},
-    fmt::{self, Debug, Display, Formatter},
-};
+use std::cmp::Ordering;
 
 use hashbrown::{HashMap, HashSet};
 
@@ -11,25 +7,25 @@ use crate::index_map::{IndexKey, IndexMap};
 /// A manager of binary decision diagrams.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BddManager {
-    nodes: IndexMap<BddId, BddIte>,
-    vars: IndexMap<Var, String>,
+    pub(crate) nodes: IndexMap<BddId, BddIte>,
+    pub(crate) vars: IndexMap<Var, String>,
 }
 
 /// A binary decision diagram (specifically, reduced ordered binary decision
 /// diagram (ROBDD)).
 #[derive(Clone, Copy)]
 pub struct Bdd<'mgr> {
-    id: BddId,
-    mgr: &'mgr BddManager,
+    pub(crate) id: BddId,
+    pub(crate) mgr: &'mgr BddManager,
 }
 
 /// A binary decision diagram in a `BddManager`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct BddId(u32);
+pub struct BddId(pub(crate) u32);
 
 /// A boolean variable.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Var(u32);
+pub struct Var(pub(crate) u32);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct BddIte {
@@ -59,21 +55,13 @@ impl BddManager {
 
     /// Gets the node for the BDD id.
     #[inline]
-    fn get_node(&self, id: BddId) -> BddIte {
+    pub(crate) fn get_node(&self, id: BddId) -> BddIte {
         self.nodes.get_cloned(id)
     }
 
     #[inline]
     pub unsafe fn get_unchecked(&self, id: BddId) -> Bdd<'_> {
         Bdd { id, mgr: self }
-    }
-
-    fn get_var(&self, var: Var) -> &str {
-        match var.0 {
-            0 => "0",
-            1 => "1",
-            _ => self.vars.get_deref(var),
-        }
     }
 
     /// Gets or inserts the BDD for a variable.
@@ -161,41 +149,9 @@ impl BddManager {
         }
     }
 
-    pub fn reachable(&self, id: BddId) -> BTreeSet<BddId> {
-        let mut reachable = BTreeSet::new();
-        self.append_reachable(id, &mut reachable);
-        reachable
-    }
-
-    pub fn append_reachable(&self, id: BddId, reachable: &mut BTreeSet<BddId>) {
-        if reachable.insert(id) {
-            let node = self.get_node(id);
-            self.append_reachable(node.high, reachable);
-            self.append_reachable(node.low, reachable);
-        }
-    }
-
     #[inline]
     pub(crate) fn wrap(&self, id: BddId) -> Bdd<'_> {
         unsafe { self.get_unchecked(id) }
-    }
-}
-
-impl Display for BddManager {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        writeln!(f, "| Var | High | Low | Id |")?;
-        writeln!(f, "| --- | ---- | --- | -- |")?;
-        for (id, BddIte { var, high, low }) in self.nodes.iter_cloned() {
-            writeln!(
-                f,
-                "| {} | {} | {} | {} |",
-                self.get_var(var),
-                high.0,
-                low.0,
-                id.0,
-            )?;
-        }
-        Ok(())
     }
 }
 
@@ -224,49 +180,6 @@ impl<'mgr> Bdd<'mgr> {
         if self.mgr as *const BddManager != other.mgr as *const BddManager {
             manager_error();
         }
-    }
-}
-
-impl Debug for Bdd<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        Debug::fmt(&self.id, f)
-    }
-}
-
-/// Displays the BDD as a GraphViz directed graph.
-impl Display for Bdd<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let reachable = self.mgr.reachable(self.id);
-        let mut ranks = BTreeMap::<Var, Vec<BddId>>::new();
-        writeln!(f, "digraph bdd{} {{", self.id.0)?;
-        for id in reachable {
-            let node = self.mgr.get_node(id);
-            if id.is_const() {
-                writeln!(f, "    node{} [label={}, shape=square];", id.0, id.0)?;
-            } else {
-                writeln!(
-                    f,
-                    "    node{} [label={}, xlabel={}, shape=circle];",
-                    id.0,
-                    self.mgr.get_var(node.var),
-                    id.0,
-                )?;
-                writeln!(f, "    node{} -> node{};", id.0, node.high.0)?;
-                writeln!(f, "    node{} -> node{} [style=dashed];", id.0, node.low.0)?;
-                ranks.entry(node.var).or_default().push(id);
-            }
-        }
-        if !ranks.is_empty() {
-            writeln!(f)?;
-        }
-        for (_, nodes) in ranks {
-            write!(f, "    {{ rank=same; ")?;
-            for id in nodes {
-                write!(f, "node{}; ", id.0)?;
-            }
-            writeln!(f, "}}")?;
-        }
-        writeln!(f, "}}")
     }
 }
 
