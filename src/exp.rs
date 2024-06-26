@@ -1,6 +1,6 @@
 use std::fmt::{self, Display, Formatter};
 
-use crate::{Bdd, BddId};
+use crate::{BddId, BddManager};
 
 /// A boolean expression tree.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -39,7 +39,7 @@ impl Exp {
     }
 }
 
-impl Bdd {
+impl BddManager {
     /// Gets or inserts the BDD for an expression.
     pub fn insert_exp(&self, e: &Exp) -> BddId {
         match e {

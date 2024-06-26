@@ -136,11 +136,11 @@ impl<K: IndexKey + Copy, V: PartialEq + Hash, S: BuildHasher> IndexMap<K, V, S> 
 
 impl<K: IndexKey, V: Clone, S> IndexMap<K, V, S> {
     pub fn get_cloned(&self, key: K) -> V {
-        self.get_index_cloned(key.as_usize())
+        self.inner().values[key.as_usize()].clone()
     }
 
-    fn get_index_cloned(&self, index: usize) -> V {
-        self.inner().values[index].clone()
+    pub unsafe fn get_cloned_unchecked(&self, key: K) -> V {
+        unsafe { self.inner().values.get_unchecked(key.as_usize()) }.clone()
     }
 
     pub fn iter_cloned(&self) -> IndexMapClonedIter<'_, K, V, S> {
@@ -153,11 +153,11 @@ impl<K: IndexKey, V: Clone, S> IndexMap<K, V, S> {
 
 impl<K: IndexKey, V: StableDeref, S> IndexMap<K, V, S> {
     pub fn get_deref(&self, key: K) -> &V::Target {
-        self.get_index_deref(key.as_usize())
+        &*self.inner().values[key.as_usize()]
     }
 
-    fn get_index_deref(&self, index: usize) -> &V::Target {
-        &*self.inner().values[index]
+    pub unsafe fn get_deref_unchecked(&self, key: K) -> &V::Target {
+        &*unsafe { self.inner().values.get_unchecked(key.as_usize()) }
     }
 
     pub fn iter_deref(&self) -> IndexMapDerefIter<'_, K, V, S> {
@@ -173,7 +173,8 @@ impl<'a, K: IndexKey, V: Clone, S> Iterator for IndexMapClonedIter<'a, K, V, S> 
 
     fn next(&mut self) -> Option<Self::Item> {
         let index = self.range.next()?;
-        Some((K::from_usize(index), self.map.get_index_cloned(index)))
+        let value = unsafe { self.map.inner().values.get_unchecked(index) };
+        Some((K::from_usize(index), value.clone()))
     }
 }
 
@@ -182,7 +183,8 @@ impl<'a, K: IndexKey, V: StableDeref, S> Iterator for IndexMapDerefIter<'a, K, V
 
     fn next(&mut self) -> Option<Self::Item> {
         let index = self.range.next()?;
-        Some((K::from_usize(index), self.map.get_index_deref(index)))
+        let value = unsafe { self.map.inner().values.get_unchecked(index) };
+        Some((K::from_usize(index), &*value))
     }
 }
 
