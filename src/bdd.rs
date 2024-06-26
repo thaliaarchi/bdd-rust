@@ -57,7 +57,7 @@ impl BddManager {
 
     /// Gets the node for the BDD id.
     #[inline]
-    pub fn get(&self, id: BddId) -> BddIte {
+    fn get_node(&self, id: BddId) -> BddIte {
         self.nodes.get_cloned(id)
     }
 
@@ -75,60 +75,35 @@ impl BddManager {
     }
 
     /// Gets or inserts the BDD for a variable.
-    pub fn insert_var<S: Into<String>>(&self, ident: S) -> BddId {
+    pub fn insert_var<S: Into<String>>(&self, ident: S) -> Bdd<'_> {
         let var = self.vars.insert(ident.into());
-        self.insert_var_id(var)
+        self.wrap(self.insert_var_id(var))
     }
 
-    pub fn insert_var_id(&self, var: Var) -> BddId {
+    fn insert_var_id(&self, var: Var) -> BddId {
         self.nodes.insert(BddIte::new(var, BddId::ONE, BddId::ZERO))
     }
 
-    /// Gets or inserts the BDD for a NOT expression.
-    #[inline]
-    pub fn insert_not(&self, bdd_e: BddId) -> BddId {
-        self.insert_ite(bdd_e, BddId::ZERO, BddId::ONE)
-    }
-
-    /// Gets or inserts the BDD for an AND expression.
-    #[inline]
-    pub fn insert_and(&self, bdd_e1: BddId, bdd_e2: BddId) -> BddId {
-        self.insert_ite(bdd_e1, bdd_e2, BddId::ZERO)
-    }
-
-    /// Gets or inserts the BDD for an OR expression.
-    #[inline]
-    pub fn insert_or(&self, bdd_e1: BddId, bdd_e2: BddId) -> BddId {
-        self.insert_ite(bdd_e1, BddId::ONE, bdd_e2)
-    }
-
-    /// Gets or inserts the BDD for an XOR expression.
-    #[inline]
-    pub fn insert_xor(&self, bdd_e1: BddId, bdd_e2: BddId) -> BddId {
-        let bdd_e2_not = self.insert_not(bdd_e2);
-        self.insert_ite(bdd_e1, bdd_e2_not, bdd_e2)
-    }
-
     /// Gets or inserts the BDD for an if-then-else expression.
-    pub fn insert_ite(&self, bdd_if: BddId, bdd_then: BddId, bdd_else: BddId) -> BddId {
+    pub fn insert_ite(&self, e_if: BddId, e_then: BddId, e_else: BddId) -> BddId {
         // Terminal cases
-        if bdd_then.is_one() && bdd_else.is_zero() {
-            return bdd_if;
-        } else if bdd_if.is_one() || bdd_then == bdd_else {
-            return bdd_then;
-        } else if bdd_if.is_zero() {
-            return bdd_else;
+        if e_then.is_one() && e_else.is_zero() {
+            return e_if;
+        } else if e_if.is_one() || e_then == e_else {
+            return e_then;
+        } else if e_if.is_zero() {
+            return e_else;
         }
 
-        let node_if = self.get(bdd_if);
-        let node_then = self.get(bdd_then);
-        let node_else = self.get(bdd_else);
+        let node_if = self.get_node(e_if);
+        let node_then = self.get_node(e_then);
+        let node_else = self.get_node(e_else);
 
         // Cofactor each sub-function by the minimum variable
         let var = node_if.var.min(node_then.var).min(node_else.var);
-        let (co1_if, co0_if) = node_if.cofactor(bdd_if, var);
-        let (co1_then, co0_then) = node_then.cofactor(bdd_then, var);
-        let (co1_else, co0_else) = node_else.cofactor(bdd_else, var);
+        let (co1_if, co0_if) = node_if.cofactor(e_if, var);
+        let (co1_then, co0_then) = node_then.cofactor(e_then, var);
+        let (co1_else, co0_else) = node_else.cofactor(e_else, var);
 
         // Recurse on the cofactors until every variable has been expanded
         let co1 = self.insert_ite(co1_if, co1_then, co1_else);
@@ -155,7 +130,7 @@ impl BddManager {
         if id.is_const() {
             return id;
         }
-        let node = self.get(id);
+        let node = self.get_node(id);
         let var = replace.get(&node.var).copied().unwrap_or(node.var);
         let var = self.insert_var_id(var);
         let high = self.insert_replace(node.high, replace);
@@ -177,7 +152,7 @@ impl BddManager {
         visited: &mut HashSet<BddId>,
     ) {
         if visited.insert(id) {
-            let node = self.get(id);
+            let node = self.get_node(id);
             self.append_post_order(node.high, post_order, visited);
             self.append_post_order(node.low, post_order, visited);
             post_order.push(id);
@@ -192,10 +167,15 @@ impl BddManager {
 
     pub fn append_reachable(&self, id: BddId, reachable: &mut BTreeSet<BddId>) {
         if reachable.insert(id) {
-            let node = self.get(id);
+            let node = self.get_node(id);
             self.append_reachable(node.high, reachable);
             self.append_reachable(node.low, reachable);
         }
+    }
+
+    #[inline]
+    pub(crate) fn wrap(&self, id: BddId) -> Bdd<'_> {
+        unsafe { self.get_unchecked(id) }
     }
 }
 
@@ -232,6 +212,13 @@ impl<'mgr> Bdd<'mgr> {
     pub fn node(&self) -> BddIte {
         unsafe { self.mgr.nodes.get_cloned_unchecked(self.id) }
     }
+
+    pub(crate) fn assert_manager(&self, other: Bdd<'mgr>) {
+        assert_eq!(
+            self.mgr as *const BddManager, other.mgr as *const BddManager,
+            "combining BDDs from different managers",
+        );
+    }
 }
 
 impl Debug for Bdd<'_> {
@@ -247,7 +234,7 @@ impl Display for Bdd<'_> {
         let mut ranks = BTreeMap::<Var, Vec<BddId>>::new();
         writeln!(f, "digraph bdd{} {{", self.id.0)?;
         for id in reachable {
-            let node = self.mgr.get(id);
+            let node = self.mgr.get_node(id);
             if id.is_const() {
                 writeln!(f, "    node{} [label={}, shape=square];", id.0, id.0)?;
             } else {
@@ -429,7 +416,7 @@ mod tests {
             BddIte::new(a, BddId::from_usize(3), BddId::from_usize(15)), // 16
         ];
         assert_eq!(mgr.nodes, *expected);
-        assert_eq!(bdd, BddId::from_usize(16));
+        assert_eq!(bdd.id(), BddId::from_usize(16));
 
         // (a ∧ b) ∨ (¬a ∧ f) ∨ (b ∧ ¬f ∧ e)
         let mut map = mgr.replace_vars();
@@ -437,7 +424,7 @@ mod tests {
         map.insert("c", "f");
         let e = Var::from_usize(4);
         let f = Var::from_usize(5);
-        let replaced = map.replace(bdd);
+        let replaced = map.replace(bdd.id());
         expected.extend(&[
             BddIte::new(f, BddId::from_usize(1), BddId::from_usize(0)), // 17
             BddIte::new(e, BddId::from_usize(1), BddId::from_usize(0)), // 18

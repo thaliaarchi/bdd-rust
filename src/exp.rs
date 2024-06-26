@@ -1,6 +1,6 @@
 use std::fmt::{self, Display, Formatter};
 
-use crate::{BddId, BddManager};
+use crate::{Bdd, BddId, BddManager};
 
 /// A boolean expression tree.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -41,28 +41,17 @@ impl Exp {
 
 impl BddManager {
     /// Gets or inserts the BDD for an expression.
-    pub fn insert_exp(&self, e: &Exp) -> BddId {
+    pub fn insert_exp(&self, e: &Exp) -> Bdd<'_> {
+        self.wrap(self.insert_exp_(e))
+    }
+
+    fn insert_exp_(&self, e: &Exp) -> BddId {
         match e {
-            Exp::Var(var) => self.insert_var(var),
-            Exp::Not(e) => {
-                let bdd_e = self.insert_exp(e);
-                self.insert_not(bdd_e)
-            }
-            Exp::And(e1, e2) => {
-                let bdd_e1 = self.insert_exp(e1);
-                let bdd_e2 = self.insert_exp(e2);
-                self.insert_and(bdd_e1, bdd_e2)
-            }
-            Exp::Or(e1, e2) => {
-                let bdd_e1 = self.insert_exp(e1);
-                let bdd_e2 = self.insert_exp(e2);
-                self.insert_or(bdd_e1, bdd_e2)
-            }
-            Exp::Xor(e1, e2) => {
-                let bdd_e1 = self.insert_exp(e1);
-                let bdd_e2 = self.insert_exp(e2);
-                self.insert_xor(bdd_e1, bdd_e2)
-            }
+            Exp::Var(var) => self.insert_var(var).id(),
+            Exp::Not(e) => self.insert_not(self.insert_exp_(e)),
+            Exp::And(e1, e2) => self.insert_and(self.insert_exp_(e1), self.insert_exp_(e2)),
+            Exp::Or(e1, e2) => self.insert_or(self.insert_exp_(e1), self.insert_exp_(e2)),
+            Exp::Xor(e1, e2) => self.insert_xor(self.insert_exp_(e1), self.insert_exp_(e2)),
         }
     }
 }

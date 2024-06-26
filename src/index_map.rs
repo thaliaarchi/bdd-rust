@@ -106,6 +106,10 @@ impl<K, V, S> IndexMap<K, V, S> {
         // SAFETY: See `IndexMap::inner`.
         unsafe { &mut *self.inner.get() }
     }
+
+    pub fn len(&self) -> usize {
+        self.inner().values.len()
+    }
 }
 
 impl<K: IndexKey + Copy, V: PartialEq + Hash, S: BuildHasher> IndexMap<K, V, S> {

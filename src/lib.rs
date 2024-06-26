@@ -1,6 +1,7 @@
 mod bdd;
 mod exp;
 pub(crate) mod index_map;
+mod ops;
 
-pub use crate::bdd::*;
-pub use crate::exp::*;
+pub use bdd::*;
+pub use exp::*;
