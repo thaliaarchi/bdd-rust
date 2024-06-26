@@ -1,8 +1,10 @@
 use std::{
     cmp::Ordering,
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet},
     fmt::{self, Debug, Display, Formatter},
 };
+
+use hashbrown::{HashMap, HashSet};
 
 use crate::index_map::{IndexKey, IndexMap};
 
