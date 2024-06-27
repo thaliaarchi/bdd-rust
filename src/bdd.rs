@@ -300,6 +300,15 @@ impl BddIte {
             (self_id, self_id)
         }
     }
+
+    #[inline]
+    pub(crate) fn as_var(&self) -> Var {
+        debug_assert!(
+            !self.var.is_const() && self.high == BddId::ONE && self.low == BddId::ZERO,
+            "node is not a variable node",
+        );
+        self.var
+    }
 }
 
 impl<'bdd> VarReplaceMap<'bdd> {

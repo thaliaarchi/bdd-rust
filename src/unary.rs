@@ -39,6 +39,53 @@ impl<'mgr> Unary<'mgr> {
         self.mgr.wrap(self.unique)
     }
 
+    pub fn equals_const(&self, rhs: i64) -> Bdd<'mgr> {
+        let index = Self::index(self.bounds.start, rhs);
+        let mut equal = BddId::ONE;
+        for (i, &v) in self.values.iter().enumerate().rev() {
+            let var = self.mgr.get_node(v).as_var();
+            equal = if i == index {
+                self.mgr.insert_node(var, equal, BddId::ZERO)
+            } else {
+                self.mgr.insert_node(var, BddId::ZERO, equal)
+            };
+        }
+        self.mgr.wrap(equal)
+    }
+
+    pub fn lt_const(&self, rhs: i64) -> Bdd<'mgr> {
+        self.mgr.wrap(self.cmp_const(rhs, |i, j| i < j))
+    }
+
+    pub fn le_const(&self, rhs: i64) -> Bdd<'mgr> {
+        self.mgr.wrap(self.cmp_const(rhs, |i, j| i <= j))
+    }
+
+    pub fn gt_const(&self, rhs: i64) -> Bdd<'mgr> {
+        self.mgr.wrap(self.cmp_const(rhs, |i, j| i > j))
+    }
+
+    pub fn ge_const(&self, rhs: i64) -> Bdd<'mgr> {
+        self.mgr.wrap(self.cmp_const(rhs, |i, j| i >= j))
+    }
+
+    fn cmp_const<F: Fn(usize, usize) -> bool>(&self, rhs: i64, cmp_index: F) -> BddId {
+        let index = Self::index(self.bounds.start, rhs);
+        let mut equal = BddId::ZERO;
+        let mut none = BddId::ONE;
+        for (i, &v) in self.values.iter().enumerate().rev() {
+            let var = self.mgr.get_node(v).as_var();
+            let high = if cmp_index(i, index) {
+                none
+            } else {
+                BddId::ZERO
+            };
+            equal = self.mgr.insert_node(var, high, equal);
+            none = self.mgr.insert_node(var, BddId::ZERO, none);
+        }
+        equal
+    }
+
     fn index(start: i64, value: i64) -> usize {
         value
             .checked_sub(start)
@@ -54,10 +101,9 @@ fn unique(mgr: &BddManager, values: &[BddId]) -> BddId {
     let mut unique = BddId::ZERO;
     let mut none = BddId::ONE;
     for &v in values.iter().rev() {
-        let node = mgr.get_node(v);
-        debug_assert!(!node.var.is_const() && node.high == BddId::ONE && node.low == BddId::ZERO);
-        unique = mgr.insert_node(node.var, none, unique);
-        none = mgr.insert_node(node.var, BddId::ZERO, none);
+        let var = mgr.get_node(v).as_var();
+        unique = mgr.insert_node(var, none, unique);
+        none = mgr.insert_node(var, BddId::ZERO, none);
     }
     unique
 }
