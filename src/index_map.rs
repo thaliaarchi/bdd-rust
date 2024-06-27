@@ -4,6 +4,7 @@ use std::{
     cell::UnsafeCell,
     fmt::{self, Debug, Formatter},
     hash::{BuildHasher, Hash},
+    marker::PhantomData,
     ops::{Deref, Range},
 };
 
@@ -27,15 +28,21 @@ struct IndexMapInner<K, V, S> {
     hash_builder: S,
 }
 
+/// Iterator for keys in an `IndexMap`.
+pub struct KeyIter<K> {
+    range: Range<usize>,
+    marker: PhantomData<K>,
+}
+
 /// Iterator for key-value pairs in an `IndexMap`, which clones the values.
-pub struct IndexMapClonedIter<'a, K, V, A = DefaultHashBuilder> {
+pub struct ClonedIter<'a, K, V, A = DefaultHashBuilder> {
     map: &'a IndexMap<K, V, A>,
     range: Range<usize>,
 }
 
 /// Iterator for key-value pairs in an `IndexMap`, which dereferences the
 /// values.
-pub struct IndexMapDerefIter<'a, K, V, A = DefaultHashBuilder> {
+pub struct DerefIter<'a, K, V, A = DefaultHashBuilder> {
     map: &'a IndexMap<K, V, A>,
     range: Range<usize>,
 }
@@ -107,6 +114,7 @@ impl<K, V, S> IndexMap<K, V, S> {
         unsafe { &mut *self.inner.get() }
     }
 
+    /// Returns the number of values in this map.
     pub fn len(&self) -> usize {
         self.inner().values.len()
     }
@@ -138,17 +146,32 @@ impl<K: IndexKey + Copy, V: PartialEq + Hash, S: BuildHasher> IndexMap<K, V, S> 
     }
 }
 
+impl<K: IndexKey, V, S> IndexMap<K, V, S> {
+    /// Returns an iterator for keys in the map.
+    pub fn iter_keys(&self) -> KeyIter<K> {
+        KeyIter {
+            range: 0..self.inner().values.len(),
+            marker: PhantomData,
+        }
+    }
+}
+
 impl<K: IndexKey, V: Clone, S> IndexMap<K, V, S> {
+    /// Gets the value at the given key in the map and clones it.
     pub fn get_cloned(&self, key: K) -> V {
         self.inner().values[key.as_usize()].clone()
     }
 
+    /// Gets the value at the given key in the map, without checking that it is
+    /// in range, and clones it.
     pub unsafe fn get_cloned_unchecked(&self, key: K) -> V {
         unsafe { self.inner().values.get_unchecked(key.as_usize()) }.clone()
     }
 
-    pub fn iter_cloned(&self) -> IndexMapClonedIter<'_, K, V, S> {
-        IndexMapClonedIter {
+    /// Returns an iterator for key-value pairs in the map, which clones the
+    /// values.
+    pub fn iter_cloned(&self) -> ClonedIter<'_, K, V, S> {
+        ClonedIter {
             map: self,
             range: 0..self.inner().values.len(),
         }
@@ -156,23 +179,36 @@ impl<K: IndexKey, V: Clone, S> IndexMap<K, V, S> {
 }
 
 impl<K: IndexKey, V: StableDeref, S> IndexMap<K, V, S> {
+    /// Gets the value at the given key in the map and dereferences it.
     pub fn get_deref(&self, key: K) -> &V::Target {
         &*self.inner().values[key.as_usize()]
     }
 
+    /// Gets the value at the given key in the map, without checking that it is
+    /// in range, and dereferences it.
     pub unsafe fn get_deref_unchecked(&self, key: K) -> &V::Target {
         &*unsafe { self.inner().values.get_unchecked(key.as_usize()) }
     }
 
-    pub fn iter_deref(&self) -> IndexMapDerefIter<'_, K, V, S> {
-        IndexMapDerefIter {
+    /// Returns an iterator for key-value pairs in the map, which dereferences
+    /// the values.
+    pub fn iter_deref(&self) -> DerefIter<'_, K, V, S> {
+        DerefIter {
             map: self,
             range: 0..self.inner().values.len(),
         }
     }
 }
 
-impl<'a, K: IndexKey, V: Clone, S> Iterator for IndexMapClonedIter<'a, K, V, S> {
+impl<K: IndexKey> Iterator for KeyIter<K> {
+    type Item = K;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        Some(K::from_usize(self.range.next()?))
+    }
+}
+
+impl<'a, K: IndexKey, V: Clone, S> Iterator for ClonedIter<'a, K, V, S> {
     type Item = (K, V);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -182,7 +218,7 @@ impl<'a, K: IndexKey, V: Clone, S> Iterator for IndexMapClonedIter<'a, K, V, S> 
     }
 }
 
-impl<'a, K: IndexKey, V: StableDeref, S> Iterator for IndexMapDerefIter<'a, K, V, S> {
+impl<'a, K: IndexKey, V: StableDeref, S> Iterator for DerefIter<'a, K, V, S> {
     type Item = (K, &'a V::Target);
 
     fn next(&mut self) -> Option<Self::Item> {
