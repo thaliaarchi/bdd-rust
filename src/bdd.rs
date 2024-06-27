@@ -37,8 +37,8 @@ pub struct BddIte {
 /// A mapping for replacing variables in a BDD.
 #[derive(Debug)]
 pub struct VarReplaceMap<'bdd> {
-    bdd: &'bdd BddManager,
-    replace: HashMap<Var, Var>,
+    pub(crate) mgr: &'bdd BddManager,
+    pub(crate) replace: HashMap<Var, Var>,
 }
 
 impl BddManager {
@@ -109,14 +109,14 @@ impl BddManager {
     /// Creates a map, which can be used to replace variables in this BDD.
     pub fn replace_vars(&self) -> VarReplaceMap<'_> {
         VarReplaceMap {
-            bdd: self,
+            mgr: self,
             replace: HashMap::new(),
         }
     }
 
-    /// Creates a new BDD from `id` with the variables replaced according to the
-    /// mappings in `replace`.
-    fn insert_replace(&self, id: BddId, replace: &HashMap<Var, Var>) -> BddId {
+    /// Creates a new BDD isomorphic to `id` with the variables replaced
+    /// according to the mappings in `replace`.
+    pub(crate) fn insert_replace(&self, id: BddId, replace: &HashMap<Var, Var>) -> BddId {
         if id.is_const() {
             return id;
         }
@@ -172,12 +172,12 @@ impl<'mgr> Bdd<'mgr> {
     }
 
     #[inline]
-    pub(crate) fn assert_manager(&self, other: Bdd<'mgr>) {
+    pub(crate) fn assert_manager(&self, other: &'mgr BddManager) {
         #[inline(never)]
         fn manager_error() -> ! {
             panic!("mixed BDDs from different managers");
         }
-        if self.mgr as *const BddManager != other.mgr as *const BddManager {
+        if self.mgr as *const BddManager != other as *const BddManager {
             manager_error();
         }
     }
@@ -277,15 +277,9 @@ impl BddIte {
 impl<'bdd> VarReplaceMap<'bdd> {
     /// Inserts a mapping from `original` to `replacement`.
     pub fn insert<S: Into<String>>(&mut self, original: S, replacement: S) {
-        let original = self.bdd.vars.insert(original.into());
-        let replacement = self.bdd.vars.insert(replacement.into());
+        let original = self.mgr.vars.insert(original.into());
+        let replacement = self.mgr.vars.insert(replacement.into());
         self.replace.insert(original, replacement);
-    }
-
-    /// Creates a new BDD identical to `id` with the variables replaced
-    /// according to this mapping.
-    pub fn replace(&self, id: BddId) -> BddId {
-        self.bdd.insert_replace(id, &self.replace)
     }
 }
 
@@ -335,7 +329,7 @@ mod tests {
         let mut map = mgr.replace_vars();
         map.insert("c", "f");
         map.insert("d", "e");
-        let replaced = map.replace(bdd.id());
+        let replaced = bdd.replace(&map);
 
         let e = Var::from_usize(4);
         let f = Var::from_usize(5);
@@ -347,6 +341,6 @@ mod tests {
             BddIte::new(a, BddId::from_usize(3), BddId::from_usize(20)), // 21
         ]);
         assert_eq!(mgr.nodes, *expected);
-        assert_eq!(replaced, BddId::from_usize(21));
+        assert_eq!(replaced.id(), BddId::from_usize(21));
     }
 }

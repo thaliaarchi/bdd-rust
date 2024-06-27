@@ -1,6 +1,6 @@
 use std::ops::{BitAnd, BitOr, BitXor, Not};
 
-use crate::{Bdd, BddId, BddManager};
+use crate::{Bdd, BddId, BddManager, VarReplaceMap};
 
 impl BddManager {
     /// Gets or inserts the BDD for a NOT expression.
@@ -25,12 +25,22 @@ impl BddManager {
     }
 }
 
+impl<'mgr> Bdd<'mgr> {
+    /// Creates a new BDD isomorphic to self with the variables replaced
+    /// according to this mapping.
+    pub fn replace(&self, map: &VarReplaceMap<'mgr>) -> Bdd<'mgr> {
+        self.assert_manager(map.mgr);
+        self.mgr
+            .wrap(self.mgr.insert_replace(self.id, &map.replace))
+    }
+}
+
 macro_rules! unop(($Op:ident, $op:ident, $insert:ident) => {
     impl<'mgr> $Op for Bdd<'mgr> {
         type Output = Self;
 
         fn $op(self) -> Self::Output {
-            self.manager().wrap(self.manager().$insert(self.id()))
+            self.mgr.wrap(self.mgr.$insert(self.id))
         }
     }
 });
@@ -40,8 +50,8 @@ macro_rules! binop(($Op:ident, $op:ident, $insert:ident) => {
         type Output = Self;
 
         fn $op(self, rhs: Self) -> Self::Output {
-            self.assert_manager(rhs);
-            self.manager().wrap(self.manager().$insert(self.id(), rhs.id()))
+            self.assert_manager(rhs.mgr);
+            self.mgr.wrap(self.mgr.$insert(self.id, rhs.id))
         }
     }
 });
