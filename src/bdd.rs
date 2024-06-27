@@ -77,7 +77,7 @@ impl BddManager {
     }
 
     /// Gets or inserts the BDD for a variable.
-    pub fn insert_var<S: Into<String>>(&self, ident: S) -> Bdd<'_> {
+    pub fn variable<S: Into<String>>(&self, ident: S) -> Bdd<'_> {
         let var = self.vars.insert(ident.into());
         self.wrap(self.insert_var_id(var))
     }
@@ -87,7 +87,7 @@ impl BddManager {
     }
 
     /// Gets or inserts the BDD for an if-then-else expression.
-    pub(crate) fn insert_ite(&self, e_if: BddId, e_then: BddId, e_else: BddId) -> BddId {
+    pub(crate) fn ite(&self, e_if: BddId, e_then: BddId, e_else: BddId) -> BddId {
         // Terminal cases
         if e_then.is_one() && e_else.is_zero() {
             return e_if;
@@ -108,8 +108,8 @@ impl BddManager {
         let (co1_else, co0_else) = node_else.cofactor(e_else, var);
 
         // Recurse on the cofactors until every variable has been expanded
-        let co1 = self.insert_ite(co1_if, co1_then, co1_else);
-        let co0 = self.insert_ite(co0_if, co0_then, co0_else);
+        let co1 = self.ite(co1_if, co1_then, co1_else);
+        let co0 = self.ite(co0_if, co0_then, co0_else);
 
         // Insert the resulting node
         if co1 == co0 {
@@ -119,7 +119,7 @@ impl BddManager {
     }
 
     /// Creates a map, which can be used to replace variables in this BDD.
-    pub fn replace_vars(&self) -> VarReplaceMap<'_> {
+    pub fn replace_variables(&self) -> VarReplaceMap<'_> {
         VarReplaceMap {
             mgr: self,
             replace: HashMap::new(),
@@ -128,16 +128,16 @@ impl BddManager {
 
     /// Creates a BDD isomorphic to `id` with the variables replaced according
     /// to the mappings in `replace`.
-    pub(crate) fn insert_replace(&self, id: BddId, replace: &HashMap<Var, Var>) -> BddId {
+    pub(crate) fn replace(&self, id: BddId, replace: &HashMap<Var, Var>) -> BddId {
         if id.is_const() {
             return id;
         }
         let node = self.get_node(id);
         let var = replace.get(&node.var).copied().unwrap_or(node.var);
         let var = self.insert_var_id(var);
-        let high = self.insert_replace(node.high, replace);
-        let low = self.insert_replace(node.low, replace);
-        self.insert_ite(var, high, low)
+        let high = self.replace(node.high, replace);
+        let low = self.replace(node.low, replace);
+        self.ite(var, high, low)
     }
 
     pub fn post_order(&self, id: BddId) -> Vec<BddId> {
@@ -303,10 +303,10 @@ mod tests {
     fn insert_and_replace() {
         let mgr = BddManager::new();
         // Insert variables first to guarantee order.
-        let a = mgr.insert_var("a");
-        let b = mgr.insert_var("b");
-        let c = mgr.insert_var("c");
-        let d = mgr.insert_var("d");
+        let a = mgr.variable("a");
+        let b = mgr.variable("b");
+        let c = mgr.variable("c");
+        let d = mgr.variable("d");
         let bdd = (a & b) | (!a & c) | (b & !c & d);
 
         let a = Var::from_usize(0);
@@ -336,9 +336,9 @@ mod tests {
         assert_eq!(bdd.id(), BddId::from_usize(16));
 
         // (a & b) | (!a & f) | (b & !f & e)
-        mgr.insert_var("e");
-        mgr.insert_var("f");
-        let mut map = mgr.replace_vars();
+        mgr.variable("e");
+        mgr.variable("f");
+        let mut map = mgr.replace_variables();
         map.insert("c", "f");
         map.insert("d", "e");
         let replaced = bdd.replace(&map);

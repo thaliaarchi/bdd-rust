@@ -19,7 +19,7 @@ impl<'mgr> Unary<'mgr> {
         let len = Unary::index(bounds.start, bounds.end);
         let mut values = Vec::with_capacity(len);
         for value in bounds.clone() {
-            values.push(mgr.insert_var(format!("{ident}{value}")).id());
+            values.push(mgr.variable(format!("{ident}{value}")).id());
         }
         let unique = unique(mgr, &values);
         Unary {
@@ -103,10 +103,10 @@ mod tests {
         unique.id()
     }
 
-    fn insert_vars(mgr: &BddManager, n_vars: usize) -> Vec<BddId> {
+    fn insert_variables(mgr: &BddManager, n_vars: usize) -> Vec<BddId> {
         let mut values = Vec::with_capacity(n_vars);
         for var in 0..n_vars {
-            values.push(mgr.insert_var(format!("v{var}")).id());
+            values.push(mgr.variable(format!("v{var}")).id());
         }
         values
     }
@@ -117,7 +117,7 @@ mod tests {
             let mut ids = Vec::with_capacity(UNIQUE_ALGS.len());
             for (name, unique_fn) in UNIQUE_ALGS {
                 let mgr = BddManager::new();
-                let unique = unique_fn(&mgr, &insert_vars(&mgr, n_vars));
+                let unique = unique_fn(&mgr, &insert_variables(&mgr, n_vars));
                 ids.push((name, unique));
             }
             let mut sorted = ids.clone();
@@ -130,7 +130,7 @@ mod tests {
     fn unique_algs_equivalence() {
         for n_vars in [0, 1, 5, 16] {
             let mgr = BddManager::new();
-            let values = insert_vars(&mgr, n_vars);
+            let values = insert_variables(&mgr, n_vars);
             let id = (UNIQUE_ALGS[0].1)(&mgr, &values);
             assert!(
                 n_vars != 0 && !id.is_const() || n_vars == 0 && id == BddId::ZERO,
