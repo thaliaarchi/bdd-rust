@@ -75,7 +75,7 @@ impl BddManager {
     }
 
     /// Gets or inserts the BDD for an if-then-else expression.
-    pub fn insert_ite(&self, e_if: BddId, e_then: BddId, e_else: BddId) -> BddId {
+    pub(crate) fn insert_ite(&self, e_if: BddId, e_then: BddId, e_else: BddId) -> BddId {
         // Terminal cases
         if e_then.is_one() && e_else.is_zero() {
             return e_if;
@@ -114,8 +114,8 @@ impl BddManager {
         }
     }
 
-    /// Creates a new BDD isomorphic to `id` with the variables replaced
-    /// according to the mappings in `replace`.
+    /// Creates a BDD isomorphic to `id` with the variables replaced according
+    /// to the mappings in `replace`.
     pub(crate) fn insert_replace(&self, id: BddId, replace: &HashMap<Var, Var>) -> BddId {
         if id.is_const() {
             return id;

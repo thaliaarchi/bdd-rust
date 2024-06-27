@@ -20,14 +20,50 @@ impl BddManager {
 
     /// Gets or inserts the BDD for an XOR expression.
     fn insert_xor(&self, e1: BddId, e2: BddId) -> BddId {
-        let not_e2 = self.insert_not(e2);
-        self.insert_ite(e1, not_e2, e2)
+        self.insert_ite(e1, self.insert_not(e2), e2)
+    }
+
+    /// Gets or inserts the BDD for an implication expression.
+    fn insert_imply(&self, e1: BddId, e2: BddId) -> BddId {
+        self.insert_ite(self.insert_not(e1), BddId::ONE, e2)
+    }
+
+    /// Gets or inserts the BDD for a bidirectional implication expression.
+    fn insert_equals(&self, e1: BddId, e2: BddId) -> BddId {
+        self.insert_or(
+            self.insert_and(e1, e2),
+            self.insert_and(self.insert_not(e1), self.insert_not(e2)),
+        )
     }
 }
 
 impl<'mgr> Bdd<'mgr> {
-    /// Creates a new BDD isomorphic to self with the variables replaced
-    /// according to this mapping.
+    /// Gets or inserts the BDD for an if-then-else expression.
+    #[inline]
+    pub fn ite(&self, e_then: Bdd<'mgr>, e_else: Bdd<'mgr>) -> Bdd<'mgr> {
+        self.assert_manager(e_then.mgr);
+        self.assert_manager(e_else.mgr);
+        self.mgr
+            .wrap(self.mgr.insert_ite(self.id, e_then.id, e_else.id))
+    }
+
+    /// Gets or inserts the BDD for an implication expression.
+    #[inline]
+    pub fn imply(&self, rhs: Bdd<'mgr>) -> Bdd<'mgr> {
+        self.assert_manager(rhs.mgr);
+        self.mgr.wrap(self.mgr.insert_imply(self.id, rhs.id))
+    }
+
+    /// Gets or inserts the BDD for a bidirectional implication expression.
+    #[inline]
+    pub fn equals(&self, rhs: Bdd<'mgr>) -> Bdd<'mgr> {
+        self.assert_manager(rhs.mgr);
+        self.mgr.wrap(self.mgr.insert_equals(self.id, rhs.id))
+    }
+
+    /// Creates a BDD isomorphic to self with the variables replaced according
+    /// to this mapping.
+    #[inline]
     pub fn replace(&self, map: &VarReplaceMap<'mgr>) -> Bdd<'mgr> {
         self.assert_manager(map.mgr);
         self.mgr
@@ -39,6 +75,7 @@ macro_rules! unop(($Op:ident, $op:ident, $insert:ident) => {
     impl<'mgr> $Op for Bdd<'mgr> {
         type Output = Self;
 
+        #[inline]
         fn $op(self) -> Self::Output {
             self.mgr.wrap(self.mgr.$insert(self.id))
         }
@@ -49,6 +86,7 @@ macro_rules! binop(($Op:ident, $op:ident, $insert:ident) => {
     impl<'mgr> $Op for Bdd<'mgr> {
         type Output = Self;
 
+        #[inline]
         fn $op(self, rhs: Self) -> Self::Output {
             self.assert_manager(rhs.mgr);
             self.mgr.wrap(self.mgr.$insert(self.id, rhs.id))
