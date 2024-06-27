@@ -118,6 +118,18 @@ impl BddManager {
         self.nodes.insert(BddIte::new(var, co1, co0))
     }
 
+    /// Gets or inserts a node directly. It must already be reduced and ordered.
+    pub(crate) fn insert_node(&self, var: Var, high: BddId, low: BddId) -> BddId {
+        debug_assert!(
+            high != low
+                && !var.is_const()
+                && var < self.get_node(high).var
+                && var < self.get_node(low).var,
+            "node is not reduced and ordered",
+        );
+        self.nodes.insert(BddIte::new(var, high, low))
+    }
+
     /// Creates a map, which can be used to replace variables in this BDD.
     pub fn replace_variables(&self) -> VarReplaceMap<'_> {
         VarReplaceMap {
@@ -241,6 +253,10 @@ impl IndexKey for BddId {
 impl Var {
     pub const ZERO: Var = Var(0);
     pub const ONE: Var = Var(1);
+
+    pub fn is_const(&self) -> bool {
+        self.0 <= 1
+    }
 }
 
 impl IndexKey for Var {
