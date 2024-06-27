@@ -54,36 +54,44 @@ impl<'mgr> Unary<'mgr> {
     }
 
     pub fn lt_const(&self, rhs: i64) -> Bdd<'mgr> {
-        self.mgr.wrap(self.cmp_const(rhs, |i, j| i < j))
+        self.compare_const(rhs, |i, j| i < j)
     }
 
     pub fn le_const(&self, rhs: i64) -> Bdd<'mgr> {
-        self.mgr.wrap(self.cmp_const(rhs, |i, j| i <= j))
+        self.compare_const(rhs, |i, j| i <= j)
     }
 
     pub fn gt_const(&self, rhs: i64) -> Bdd<'mgr> {
-        self.mgr.wrap(self.cmp_const(rhs, |i, j| i > j))
+        self.compare_const(rhs, |i, j| i > j)
     }
 
     pub fn ge_const(&self, rhs: i64) -> Bdd<'mgr> {
-        self.mgr.wrap(self.cmp_const(rhs, |i, j| i >= j))
+        self.compare_const(rhs, |i, j| i >= j)
     }
 
-    fn cmp_const<F: Fn(usize, usize) -> bool>(&self, rhs: i64, cmp_index: F) -> BddId {
+    pub fn even(&self) -> Bdd<'mgr> {
+        self.compare(|i| i & 1 == 0)
+    }
+
+    pub fn odd(&self) -> Bdd<'mgr> {
+        self.compare(|i| i & 1 == 1)
+    }
+
+    fn compare_const<F: Fn(usize, usize) -> bool>(&self, rhs: i64, cmp_index: F) -> Bdd<'mgr> {
         let index = Self::index(self.bounds.start, rhs);
+        self.compare(|i| cmp_index(i, index))
+    }
+
+    fn compare<F: Fn(usize) -> bool>(&self, cmp_index: F) -> Bdd<'mgr> {
         let mut equal = BddId::ZERO;
         let mut none = BddId::ONE;
         for (i, &v) in self.values.iter().enumerate().rev() {
             let var = self.mgr.get_node(v).as_var();
-            let high = if cmp_index(i, index) {
-                none
-            } else {
-                BddId::ZERO
-            };
+            let high = if cmp_index(i) { none } else { BddId::ZERO };
             equal = self.mgr.insert_node(var, high, equal);
             none = self.mgr.insert_node(var, BddId::ZERO, none);
         }
-        equal
+        self.mgr.wrap(equal)
     }
 
     fn index(start: i64, value: i64) -> usize {
