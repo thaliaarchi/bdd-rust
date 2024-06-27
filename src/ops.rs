@@ -1,4 +1,4 @@
-use std::ops::{BitAnd, BitOr, BitXor, Not};
+use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not};
 
 use crate::{Bdd, BddId, BddManager, VarReplaceMap};
 
@@ -71,7 +71,7 @@ impl<'mgr> Bdd<'mgr> {
     }
 }
 
-macro_rules! unop(($Op:ident, $op:ident, $insert:ident) => {
+macro_rules! unop(($Op:ident $op:ident => $insert:ident) => {
     impl<'mgr> $Op for Bdd<'mgr> {
         type Output = Self;
 
@@ -82,7 +82,7 @@ macro_rules! unop(($Op:ident, $op:ident, $insert:ident) => {
     }
 });
 
-macro_rules! binop(($Op:ident, $op:ident, $insert:ident) => {
+macro_rules! binop(($Op:ident $op:ident, $OpAssign:ident $op_assign:ident => $insert:ident) => {
     impl<'mgr> $Op for Bdd<'mgr> {
         type Output = Self;
 
@@ -92,9 +92,17 @@ macro_rules! binop(($Op:ident, $op:ident, $insert:ident) => {
             self.mgr.wrap(self.mgr.$insert(self.id, rhs.id))
         }
     }
+
+    impl<'mgr> $OpAssign for Bdd<'mgr> {
+        #[inline]
+        fn $op_assign(&mut self, rhs: Self) {
+            self.assert_manager(rhs.mgr);
+            self.id = self.mgr.$insert(self.id, rhs.id);
+        }
+    }
 });
 
-unop!(Not, not, insert_not);
-binop!(BitAnd, bitand, insert_and);
-binop!(BitOr, bitor, insert_or);
-binop!(BitXor, bitxor, insert_xor);
+unop!(Not not => insert_not);
+binop!(BitAnd bitand, BitAndAssign bitand_assign => insert_and);
+binop!(BitOr bitor, BitOrAssign bitor_assign => insert_or);
+binop!(BitXor bitxor, BitXorAssign bitxor_assign => insert_xor);

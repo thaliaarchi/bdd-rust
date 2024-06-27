@@ -53,6 +53,18 @@ impl BddManager {
         }
     }
 
+    /// Gets the BDD for constant false.
+    #[inline]
+    pub fn zero(&self) -> Bdd<'_> {
+        self.wrap(BddId::ZERO)
+    }
+
+    /// Gets the BDD for constant true.
+    #[inline]
+    pub fn one(&self) -> Bdd<'_> {
+        self.wrap(BddId::ONE)
+    }
+
     /// Gets the node for the BDD id.
     #[inline]
     pub(crate) fn get_node(&self, id: BddId) -> BddIte {
