@@ -3,9 +3,33 @@ use std::{
     fmt::{self, Debug, Display, Formatter},
 };
 
-use crate::{Bdd, BddId, BddIte, BddManager, Var};
+use crate::{Bdd, BddId, BddManager, Var};
+
+/// A wrapper for `BddManager`, which displays all nodes in the manager as a
+/// table.
+#[derive(Clone)]
+pub struct DisplayTable<'mgr>(&'mgr BddManager);
+
+/// A wrapper for `BddManager`, which displays all BDDs in the manager as a
+/// GraphViz directed graph.
+#[derive(Clone)]
+pub struct DisplayDigraphAll<'mgr>(&'mgr BddManager);
+
+/// A wrapper for `Bdd`, which displays the BDD as a GraphViz directed graph.
+#[derive(Clone)]
+pub struct DisplayDigraph<'mgr>(Bdd<'mgr>);
 
 impl BddManager {
+    /// Displays all nodes in the manager as a table.
+    pub fn table(&self) -> DisplayTable<'_> {
+        DisplayTable(self)
+    }
+
+    /// Displays all BDDs in the manager as a GraphViz directed graph.
+    pub fn digraph_all(&self) -> DisplayDigraphAll<'_> {
+        DisplayDigraphAll(self)
+    }
+
     fn get_var(&self, var: Var) -> &str {
         match var.0 {
             0 => "0",
@@ -27,40 +51,17 @@ impl BddManager {
             self.append_reachable(node.low, reachable);
         }
     }
-}
 
-impl Display for BddManager {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        writeln!(f, "| Var | High | Low | Id |")?;
-        writeln!(f, "| --- | ---- | --- | -- |")?;
-        for (id, BddIte { var, high, low }) in self.nodes.iter_cloned() {
-            writeln!(
-                f,
-                "| {} | {} | {} | {} |",
-                self.get_var(var),
-                high.0,
-                low.0,
-                id.0,
-            )?;
-        }
-        Ok(())
-    }
-}
-
-impl Debug for Bdd<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        Debug::fmt(&self.id, f)
-    }
-}
-
-/// Displays the BDD as a GraphViz directed graph.
-impl Display for Bdd<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let reachable = self.mgr.reachable(self.id);
+    fn write_digraph(
+        &self,
+        f: &mut Formatter<'_>,
+        title: &str,
+        nodes: &mut dyn Iterator<Item = BddId>,
+    ) -> fmt::Result {
         let mut ranks = BTreeMap::<Var, Vec<BddId>>::new();
-        writeln!(f, "digraph bdd{} {{", self.id.0)?;
-        for id in reachable {
-            let node = self.mgr.get_node(id);
+        writeln!(f, "digraph {title} {{")?;
+        for id in nodes {
+            let node = self.get_node(id);
             if id.is_const() {
                 writeln!(f, "    node{} [label={}, shape=square];", id.0, id.0)?;
             } else {
@@ -68,7 +69,7 @@ impl Display for Bdd<'_> {
                     f,
                     "    node{} [label={}, xlabel={}, shape=circle];",
                     id.0,
-                    self.mgr.get_var(node.var),
+                    self.get_var(node.var),
                     id.0,
                 )?;
                 writeln!(f, "    node{} -> node{};", id.0, node.high.0)?;
@@ -87,5 +88,53 @@ impl Display for Bdd<'_> {
             writeln!(f, "}}")?;
         }
         writeln!(f, "}}")
+    }
+}
+
+impl<'mgr> Bdd<'mgr> {
+    /// Displays the BDD as a GraphViz directed graph.
+    pub fn digraph(&self) -> DisplayDigraph<'mgr> {
+        DisplayDigraph(*self)
+    }
+}
+
+impl Display for DisplayTable<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let mgr = self.0;
+        writeln!(f, "| Var | High | Low | Id |")?;
+        writeln!(f, "| --- | ---- | --- | -- |")?;
+        for (id, node) in mgr.nodes.iter_cloned() {
+            writeln!(
+                f,
+                "| {} | {} | {} | {} |",
+                mgr.get_var(node.var),
+                node.high.0,
+                node.low.0,
+                id.0,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for DisplayDigraphAll<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.0
+            .write_digraph(f, "bdd_manager", &mut self.0.nodes.iter_keys())
+    }
+}
+
+impl Display for DisplayDigraph<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let bdd = self.0;
+        let reachable = bdd.mgr.reachable(bdd.id);
+        bdd.mgr
+            .write_digraph(f, &format!("bdd{}", bdd.id.0), &mut reachable.into_iter())
+    }
+}
+
+impl Debug for Bdd<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Bdd").field(&self.id.0).finish()
     }
 }
