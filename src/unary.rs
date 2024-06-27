@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::{mem, ops::Range};
 
 use crate::{Bdd, BddId, BddManager};
 
@@ -49,18 +49,24 @@ impl<'mgr> Unary<'mgr> {
 
 /// Computes the property that exactly one value can be set at once.
 fn unique(mgr: &BddManager, values: &[BddId]) -> BddId {
-    let mut unique = mgr.zero();
-    for &v in values {
-        unique |= mgr.wrap(v);
+    // Construct the expression from the bottom up, grouping values in
+    // increasing powers of 2 and reusing subexpressions (dynamic programming).
+    if values.is_empty() {
+        return BddId::ZERO;
     }
-    for &v1 in values {
-        for &v2 in values {
-            if v1 != v2 {
-                unique &= !mgr.wrap(v1) | !mgr.wrap(v2);
-            }
-        }
+    let mut values = values.iter().map(|&v| (mgr.not(v), v)).collect::<Vec<_>>();
+    let mut values2 = Vec::with_capacity((values.len() + 1) / 2);
+    while values.len() > 1 {
+        let mut chunks = values.chunks_exact(2);
+        values2.clear();
+        values2.extend(chunks.by_ref().map(|chunk| {
+            let [(l0, l1), (r0, r1)] = chunk.try_into().unwrap();
+            (mgr.and(l0, r0), mgr.or(mgr.and(l0, r1), mgr.and(l1, r0)))
+        }));
+        values2.extend(chunks.remainder());
+        mem::swap(&mut values, &mut values2);
     }
-    unique.id()
+    values[0].1
 }
 
 #[cfg(test)]
@@ -70,13 +76,29 @@ mod tests {
     const UNIQUE_ALGS: [(
         &'static str,
         fn(mgr: &BddManager, values: &[BddId]) -> BddId,
-    ); 3] = [
+    ); 4] = [
         ("unique", unique),
         ("unique_alt2", unique_alt2),
         ("unique_alt3", unique_alt3),
+        ("unique_alt4", unique_alt4),
     ];
 
     fn unique_alt2(mgr: &BddManager, values: &[BddId]) -> BddId {
+        let mut unique = mgr.zero();
+        for &v in values {
+            unique |= mgr.wrap(v);
+        }
+        for &v1 in values {
+            for &v2 in values {
+                if v1 != v2 {
+                    unique &= !mgr.wrap(v1) | !mgr.wrap(v2);
+                }
+            }
+        }
+        unique.id()
+    }
+
+    fn unique_alt3(mgr: &BddManager, values: &[BddId]) -> BddId {
         let mut unique = mgr.zero();
         for &v1 in values {
             let mut only_v1 = mgr.one();
@@ -89,7 +111,7 @@ mod tests {
         unique.id()
     }
 
-    fn unique_alt3(mgr: &BddManager, values: &[BddId]) -> BddId {
+    fn unique_alt4(mgr: &BddManager, values: &[BddId]) -> BddId {
         let mut unique = mgr.zero();
         for &v1 in values {
             let mut only_v1 = mgr.wrap(v1);
