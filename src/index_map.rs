@@ -4,6 +4,7 @@ use std::{
     cell::UnsafeCell,
     fmt::{self, Debug, Formatter},
     hash::{BuildHasher, Hash},
+    iter::FusedIterator,
     marker::PhantomData,
     ops::{Deref, Range},
 };
@@ -104,17 +105,20 @@ impl<K: Clone, V: Clone, S: Clone> Clone for IndexMap<K, V, S> {
 }
 
 impl<K, V, S> IndexMap<K, V, S> {
+    #[inline]
     fn inner(&self) -> &IndexMapInner<K, V, S> {
         // SAFETY: See `IndexMap::inner`.
         unsafe { &*self.inner.get() }
     }
 
+    #[inline]
     fn inner_mut(&self) -> &mut IndexMapInner<K, V, S> {
         // SAFETY: See `IndexMap::inner`.
         unsafe { &mut *self.inner.get() }
     }
 
     /// Returns the number of values in this map.
+    #[inline]
     pub fn len(&self) -> usize {
         self.inner().values.len()
     }
@@ -148,6 +152,7 @@ impl<K: IndexKey + Copy, V: PartialEq + Hash, S: BuildHasher> IndexMap<K, V, S> 
 
 impl<K: IndexKey, V, S> IndexMap<K, V, S> {
     /// Returns an iterator for keys in the map.
+    #[inline]
     pub fn iter_keys(&self) -> KeyIter<K> {
         KeyIter {
             range: 0..self.inner().values.len(),
@@ -158,18 +163,27 @@ impl<K: IndexKey, V, S> IndexMap<K, V, S> {
 
 impl<K: IndexKey, V: Clone, S> IndexMap<K, V, S> {
     /// Gets the value at the given key in the map and clones it.
+    #[inline]
     pub fn get_cloned(&self, key: K) -> V {
         self.inner().values[key.as_usize()].clone()
     }
 
     /// Gets the value at the given key in the map, without checking that it is
     /// in range, and clones it.
+    #[inline]
     pub unsafe fn get_cloned_unchecked(&self, key: K) -> V {
         unsafe { self.inner().values.get_unchecked(key.as_usize()) }.clone()
     }
 
+    #[inline]
+    fn get_kv_cloned(&self, index: usize) -> (K, V) {
+        let value = unsafe { self.inner().values.get_unchecked(index) };
+        (K::from_usize(index), value.clone())
+    }
+
     /// Returns an iterator for key-value pairs in the map, which clones the
     /// values.
+    #[inline]
     pub fn iter_cloned(&self) -> ClonedIter<'_, K, V, S> {
         ClonedIter {
             map: self,
@@ -180,18 +194,27 @@ impl<K: IndexKey, V: Clone, S> IndexMap<K, V, S> {
 
 impl<K: IndexKey, V: StableDeref, S> IndexMap<K, V, S> {
     /// Gets the value at the given key in the map and dereferences it.
+    #[inline]
     pub fn get_deref(&self, key: K) -> &V::Target {
         &*self.inner().values[key.as_usize()]
     }
 
     /// Gets the value at the given key in the map, without checking that it is
     /// in range, and dereferences it.
+    #[inline]
     pub unsafe fn get_deref_unchecked(&self, key: K) -> &V::Target {
         &*unsafe { self.inner().values.get_unchecked(key.as_usize()) }
     }
 
+    #[inline]
+    fn get_kv_deref(&self, index: usize) -> (K, &V::Target) {
+        let value = unsafe { self.inner().values.get_unchecked(index) };
+        (K::from_usize(index), &*value)
+    }
+
     /// Returns an iterator for key-value pairs in the map, which dereferences
     /// the values.
+    #[inline]
     pub fn iter_deref(&self) -> DerefIter<'_, K, V, S> {
         DerefIter {
             map: self,
@@ -203,30 +226,139 @@ impl<K: IndexKey, V: StableDeref, S> IndexMap<K, V, S> {
 impl<K: IndexKey> Iterator for KeyIter<K> {
     type Item = K;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         Some(K::from_usize(self.range.next()?))
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.range.size_hint()
+    }
+
+    #[inline]
+    fn count(self) -> usize {
+        self.range.count()
+    }
+
+    #[inline]
+    fn last(mut self) -> Option<Self::Item> {
+        self.next_back()
+    }
+
+    #[inline]
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.range.nth(n).map(K::from_usize)
     }
 }
 
 impl<'a, K: IndexKey, V: Clone, S> Iterator for ClonedIter<'a, K, V, S> {
     type Item = (K, V);
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let index = self.range.next()?;
-        let value = unsafe { self.map.inner().values.get_unchecked(index) };
-        Some((K::from_usize(index), value.clone()))
+        self.range.next().map(|index| self.map.get_kv_cloned(index))
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.range.size_hint()
+    }
+
+    #[inline]
+    fn count(self) -> usize {
+        self.range.count()
+    }
+
+    #[inline]
+    fn last(mut self) -> Option<Self::Item> {
+        self.next_back()
+    }
+
+    #[inline]
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.range.nth(n).map(|index| self.map.get_kv_cloned(index))
     }
 }
 
 impl<'a, K: IndexKey, V: StableDeref, S> Iterator for DerefIter<'a, K, V, S> {
     type Item = (K, &'a V::Target);
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let index = self.range.next()?;
-        let value = unsafe { self.map.inner().values.get_unchecked(index) };
-        Some((K::from_usize(index), &*value))
+        self.range.next().map(|index| self.map.get_kv_deref(index))
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.range.size_hint()
+    }
+
+    #[inline]
+    fn count(self) -> usize {
+        self.range.count()
+    }
+
+    #[inline]
+    fn last(mut self) -> Option<Self::Item> {
+        self.next_back()
+    }
+
+    #[inline]
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.range.nth(n).map(|index| self.map.get_kv_deref(index))
     }
 }
+
+impl<K: IndexKey> DoubleEndedIterator for KeyIter<K> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.range.next_back().map(K::from_usize)
+    }
+}
+
+impl<K: IndexKey, V: Clone, S> DoubleEndedIterator for ClonedIter<'_, K, V, S> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.range
+            .next_back()
+            .map(|index| self.map.get_kv_cloned(index))
+    }
+}
+
+impl<K: IndexKey, V: StableDeref, S> DoubleEndedIterator for DerefIter<'_, K, V, S> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.range
+            .next_back()
+            .map(|index| self.map.get_kv_deref(index))
+    }
+}
+
+impl<K: IndexKey> ExactSizeIterator for KeyIter<K> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.range.len()
+    }
+}
+
+impl<K: IndexKey, V: Clone, S> ExactSizeIterator for ClonedIter<'_, K, V, S> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.range.len()
+    }
+}
+
+impl<K: IndexKey, V: StableDeref, S> ExactSizeIterator for DerefIter<'_, K, V, S> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.range.len()
+    }
+}
+
+impl<K: IndexKey> FusedIterator for KeyIter<K> {}
+impl<K: IndexKey, V: Clone, S> FusedIterator for ClonedIter<'_, K, V, S> {}
+impl<K: IndexKey, V: StableDeref, S> FusedIterator for DerefIter<'_, K, V, S> {}
 
 impl<K: IndexKey + Debug, V: Debug, S> Debug for IndexMap<K, V, S> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
