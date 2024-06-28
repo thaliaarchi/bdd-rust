@@ -174,6 +174,16 @@ impl BddManager {
         }
     }
 
+    /// Returns the number of nodes in the manager.
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+
+    /// Returns the number of variables in the manager.
+    pub fn variable_count(&self) -> usize {
+        self.vars.len()
+    }
+
     #[inline]
     pub(crate) fn wrap(&self, id: BddId) -> Bdd<'_> {
         unsafe { self.get_unchecked(id) }
@@ -194,6 +204,15 @@ impl<'mgr> Bdd<'mgr> {
     /// Returns the ITE node for this BDD.
     pub fn node(&self) -> BddIte {
         unsafe { self.mgr.nodes.get_cloned_unchecked(self.id) }
+    }
+
+    /// Computes the number of assignments that would satisfy this BDD.
+    pub fn cardinality(&self) -> usize {
+        let node = self.node();
+        if let Some(v) = node.var.as_const() {
+            return v as usize;
+        }
+        self.mgr.wrap(node.high).cardinality() + self.mgr.wrap(node.low).cardinality()
     }
 
     #[inline]
@@ -257,6 +276,14 @@ impl Var {
 
     pub fn is_const(&self) -> bool {
         self.0 <= 1
+    }
+
+    pub fn as_const(&self) -> Option<bool> {
+        if self.is_const() {
+            Some(self == &Var::ONE)
+        } else {
+            None
+        }
     }
 }
 
