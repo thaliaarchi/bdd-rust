@@ -291,7 +291,7 @@ impl BddIte {
     }
 
     /// Splits into expressions `co1`, `co0`, that have `var` factored out, such
-    /// that `(var ∧ co1) ∨ (¬var ∧ co0)`.
+    /// that `(var & co1) | (!var & co0)`.
     #[inline]
     fn cofactor(&self, self_id: BddId, var: Var) -> (BddId, BddId) {
         if self.var == var {

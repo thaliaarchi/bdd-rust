@@ -96,6 +96,60 @@ impl<'mgr> Bdd<'mgr> {
     pub fn digraph(&self) -> DisplayDigraph<'mgr> {
         DisplayDigraph(*self)
     }
+
+    fn write_shannon(&self, f: &mut Formatter<'_>, root: bool) -> fmt::Result {
+        let node = self.node();
+        let var = self.mgr.get_var(node.var);
+        let both = node.high != BddId::ZERO && node.low != BddId::ZERO;
+        if both && !root {
+            f.write_str("(")?;
+        }
+        if !node.high.is_const() {
+            if both {
+                f.write_str("(")?;
+            }
+            f.write_str(var)?;
+            f.write_str(" & ")?;
+            self.mgr.wrap(node.high).write_shannon(f, false)?;
+            if both {
+                f.write_str(")")?;
+            }
+        } else if node.high == BddId::ONE {
+            f.write_str(var)?;
+        }
+        if both {
+            f.write_str(" | ")?;
+        }
+        if !node.low.is_const() {
+            if both {
+                f.write_str("(")?;
+            }
+            f.write_str("!")?;
+            f.write_str(var)?;
+            f.write_str(" & ")?;
+            self.mgr.wrap(node.low).write_shannon(f, false)?;
+            if both {
+                f.write_str(")")?;
+            }
+        } else if node.low == BddId::ONE {
+            f.write_str("!")?;
+            f.write_str(var)?;
+        }
+        if both && !root {
+            f.write_str(")")?;
+        }
+        Ok(())
+    }
+}
+
+/// Displays the BDD formatted as its Shannon expansion.
+impl Display for Bdd<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if self.id().is_const() {
+            return f.write_str(if self.id() == BddId::ONE { "1" } else { "0" });
+        }
+        self.write_shannon(f, true)
+    }
 }
 
 impl Display for DisplayTable<'_> {
