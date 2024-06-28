@@ -8,7 +8,6 @@ use crate::{Bdd, BddId, BddManager};
 pub struct Unary<'mgr> {
     values: Vec<BddId>,
     bounds: Range<i64>,
-    unique: BddId,
     mgr: &'mgr BddManager,
 }
 
@@ -21,11 +20,9 @@ impl<'mgr> Unary<'mgr> {
         for value in bounds.clone() {
             values.push(mgr.variable(format!("{ident}{value}")).id());
         }
-        let unique = unique(mgr, &values);
         Unary {
             values,
             bounds,
-            unique,
             mgr,
         }
     }
@@ -35,8 +32,9 @@ impl<'mgr> Unary<'mgr> {
             .wrap(self.values[Unary::index(self.bounds.start, other)])
     }
 
+    /// Computes the property that exactly one value can be set at once.
     pub fn value(&self) -> Bdd<'_> {
-        self.mgr.wrap(self.unique)
+        self.mgr.wrap(unique(&self.mgr, &self.values))
     }
 
     pub fn equals(&self, rhs: &Unary<'mgr>) -> Bdd<'mgr> {
