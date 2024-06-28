@@ -100,8 +100,11 @@ impl<'mgr> Unary<'mgr> {
         let mut none = BddId::ONE;
         for (i, &v) in self.values.iter().enumerate().rev() {
             let var = self.mgr.get_node(v).as_var();
-            let high = if cmp_index(i) { none } else { BddId::ZERO };
-            equal = self.mgr.insert_node(var, high, equal);
+            if cmp_index(i) {
+                equal = self.mgr.insert_node(var, none, equal);
+            } else if equal != BddId::ZERO {
+                equal = self.mgr.insert_node(var, BddId::ZERO, equal);
+            }
             none = self.mgr.insert_node(var, BddId::ZERO, none);
         }
         self.mgr.wrap(equal)

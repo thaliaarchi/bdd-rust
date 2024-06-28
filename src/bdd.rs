@@ -125,7 +125,8 @@ impl BddManager {
                 && !var.is_const()
                 && var < self.get_node(high).var
                 && var < self.get_node(low).var,
-            "node is not reduced and ordered",
+            "node is not reduced and ordered: {:?}",
+            BddIte { var, high, low },
         );
         self.nodes.insert(BddIte::new(var, high, low))
     }
