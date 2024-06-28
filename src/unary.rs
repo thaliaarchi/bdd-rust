@@ -44,10 +44,11 @@ impl<'mgr> Unary<'mgr> {
         assert_eq!(self.bounds, rhs.bounds, "unimplemented");
         let mut equal = self.mgr.zero();
         let mut none = self.mgr.one();
-        for (&lv, &rv) in self.values.iter().zip(&rhs.values) {
+        for (&lv, &rv) in self.values.iter().zip(&rhs.values).rev() {
             let (lv, rv) = (self.mgr.wrap(lv), self.mgr.wrap(rv));
-            equal |= lv & rv & none;
-            none &= !lv & !rv;
+            let neither = !lv & !rv;
+            equal = (neither & equal) | (lv & rv & none);
+            none &= neither;
         }
         equal
     }
