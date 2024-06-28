@@ -196,12 +196,12 @@ impl<'mgr> Bdd<'mgr> {
     }
 
     #[inline]
-    pub(crate) fn assert_manager(&self, other: &'mgr BddManager) {
+    pub(crate) fn assert_manager(mgr1: &'mgr BddManager, mgr2: &'mgr BddManager) {
         #[inline(never)]
         fn manager_error() -> ! {
             panic!("mixed BDDs from different managers");
         }
-        if self.mgr as *const BddManager != other as *const BddManager {
+        if mgr1 as *const BddManager != mgr2 as *const BddManager {
             manager_error();
         }
     }

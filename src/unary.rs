@@ -39,6 +39,19 @@ impl<'mgr> Unary<'mgr> {
         self.mgr.wrap(self.unique)
     }
 
+    pub fn equals(&self, rhs: &Unary<'mgr>) -> Bdd<'mgr> {
+        Bdd::assert_manager(self.mgr, rhs.mgr);
+        assert_eq!(self.bounds, rhs.bounds, "unimplemented");
+        let mut equal = self.mgr.zero();
+        let mut none = self.mgr.one();
+        for (&lv, &rv) in self.values.iter().zip(&rhs.values) {
+            let (lv, rv) = (self.mgr.wrap(lv), self.mgr.wrap(rv));
+            equal |= lv & rv & none;
+            none &= !lv & !rv;
+        }
+        equal
+    }
+
     pub fn equals_const(&self, rhs: i64) -> Bdd<'mgr> {
         let index = Self::index(self.bounds.start, rhs);
         let mut equal = BddId::ONE;

@@ -38,22 +38,22 @@ impl<'mgr> Bdd<'mgr> {
     /// Gets or inserts the BDD for an if-then-else expression.
     #[inline]
     pub fn ite(&self, e_then: Bdd<'mgr>, e_else: Bdd<'mgr>) -> Bdd<'mgr> {
-        self.assert_manager(e_then.mgr);
-        self.assert_manager(e_else.mgr);
+        Self::assert_manager(self.mgr, e_then.mgr);
+        Self::assert_manager(self.mgr, e_else.mgr);
         self.mgr.wrap(self.mgr.ite(self.id, e_then.id, e_else.id))
     }
 
     /// Gets or inserts the BDD for an implication expression.
     #[inline]
     pub fn imply(&self, rhs: Bdd<'mgr>) -> Bdd<'mgr> {
-        self.assert_manager(rhs.mgr);
+        Self::assert_manager(self.mgr, rhs.mgr);
         self.mgr.wrap(self.mgr.imply(self.id, rhs.id))
     }
 
     /// Gets or inserts the BDD for a bidirectional implication expression.
     #[inline]
     pub fn equals(&self, rhs: Bdd<'mgr>) -> Bdd<'mgr> {
-        self.assert_manager(rhs.mgr);
+        Self::assert_manager(self.mgr, rhs.mgr);
         self.mgr.wrap(self.mgr.equals(self.id, rhs.id))
     }
 
@@ -61,9 +61,8 @@ impl<'mgr> Bdd<'mgr> {
     /// to this mapping.
     #[inline]
     pub fn replace(&self, map: &VarReplaceMap<'mgr>) -> Bdd<'mgr> {
-        self.assert_manager(map.mgr);
-        self.mgr
-            .wrap(self.mgr.replace(self.id, &map.replace))
+        Self::assert_manager(self.mgr, map.mgr);
+        self.mgr.wrap(self.mgr.replace(self.id, &map.replace))
     }
 }
 
@@ -84,7 +83,7 @@ macro_rules! binop(($Op:ident $op:ident, $OpAssign:ident $op_assign:ident => $in
 
         #[inline]
         fn $op(self, rhs: Self) -> Self::Output {
-            self.assert_manager(rhs.mgr);
+            Self::assert_manager(self.mgr, rhs.mgr);
             self.mgr.wrap(self.mgr.$insert(self.id, rhs.id))
         }
     }
@@ -92,7 +91,7 @@ macro_rules! binop(($Op:ident $op:ident, $OpAssign:ident $op_assign:ident => $in
     impl<'mgr> $OpAssign for Bdd<'mgr> {
         #[inline]
         fn $op_assign(&mut self, rhs: Self) {
-            self.assert_manager(rhs.mgr);
+            Self::assert_manager(self.mgr, rhs.mgr);
             self.id = self.mgr.$insert(self.id, rhs.id);
         }
     }
