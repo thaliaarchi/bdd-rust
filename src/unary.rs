@@ -53,6 +53,34 @@ impl<'mgr> Unary<'mgr> {
         equal
     }
 
+    pub fn lt(&self, rhs: &Unary<'mgr>) -> Bdd<'mgr> {
+        Bdd::assert_manager(self.mgr, rhs.mgr);
+        assert_eq!(self.bounds, rhs.bounds, "unimplemented");
+        let mut compare = self.mgr.zero();
+        let mut only_lhs = self.mgr.zero();
+        let mut none = self.mgr.one();
+        for (&lv, &rv) in self.values.iter().zip(&rhs.values) {
+            let (lv, rv) = (self.mgr.wrap(lv), self.mgr.wrap(rv));
+            let neither = !lv & !rv;
+            compare = (neither & compare) | (!lv & rv & only_lhs);
+            only_lhs = (neither & only_lhs) | (lv & !rv & none);
+            none &= neither;
+        }
+        compare
+    }
+
+    pub fn le(&self, rhs: &Unary<'mgr>) -> Bdd<'mgr> {
+        self.lt(rhs) | self.equals(rhs)
+    }
+
+    pub fn gt(&self, rhs: &Unary<'mgr>) -> Bdd<'mgr> {
+        rhs.lt(self)
+    }
+
+    pub fn ge(&self, rhs: &Unary<'mgr>) -> Bdd<'mgr> {
+        self.gt(rhs) | self.equals(rhs)
+    }
+
     pub fn equals_const(&self, rhs: i64) -> Bdd<'mgr> {
         let index = Self::index(self.bounds.start, rhs);
         let mut equal = BddId::ONE;
@@ -68,35 +96,39 @@ impl<'mgr> Unary<'mgr> {
     }
 
     pub fn lt_const(&self, rhs: i64) -> Bdd<'mgr> {
-        self.compare_const(rhs, |i, j| i < j)
+        self.compare_const_index(rhs, |i, j| i < j)
     }
 
     pub fn le_const(&self, rhs: i64) -> Bdd<'mgr> {
-        self.compare_const(rhs, |i, j| i <= j)
+        self.compare_const_index(rhs, |i, j| i <= j)
     }
 
     pub fn gt_const(&self, rhs: i64) -> Bdd<'mgr> {
-        self.compare_const(rhs, |i, j| i > j)
+        self.compare_const_index(rhs, |i, j| i > j)
     }
 
     pub fn ge_const(&self, rhs: i64) -> Bdd<'mgr> {
-        self.compare_const(rhs, |i, j| i >= j)
+        self.compare_const_index(rhs, |i, j| i >= j)
     }
 
     pub fn even(&self) -> Bdd<'mgr> {
-        self.compare(|i| i & 1 == 0)
+        self.compare_const(|i| i & 1 == 0)
     }
 
     pub fn odd(&self) -> Bdd<'mgr> {
-        self.compare(|i| i & 1 == 1)
+        self.compare_const(|i| i & 1 == 1)
     }
 
-    fn compare_const<F: Fn(usize, usize) -> bool>(&self, rhs: i64, cmp_index: F) -> Bdd<'mgr> {
+    fn compare_const_index<F: Fn(usize, usize) -> bool>(
+        &self,
+        rhs: i64,
+        cmp_index: F,
+    ) -> Bdd<'mgr> {
         let index = Self::index(self.bounds.start, rhs);
-        self.compare(|i| cmp_index(i, index))
+        self.compare_const(|i| cmp_index(i, index))
     }
 
-    fn compare<F: Fn(usize) -> bool>(&self, cmp_index: F) -> Bdd<'mgr> {
+    fn compare_const<F: Fn(usize) -> bool>(&self, cmp_index: F) -> Bdd<'mgr> {
         let mut equal = BddId::ZERO;
         let mut none = BddId::ONE;
         for (i, &v) in self.values.iter().enumerate().rev() {
@@ -138,6 +170,69 @@ mod tests {
     use std::mem;
 
     use super::*;
+
+    #[test]
+    fn compare() {
+        let mgr = BddManager::new();
+        let a = Unary::new(&mgr, "a", 1..6);
+        let b = Unary::new(&mgr, "b", 1..6);
+        let found_a_unique = a.value();
+        let found_b_unique = b.value();
+        let found_eq = a.equals(&b);
+        let found_lt = a.lt(&b);
+        let found_gt = a.gt(&b);
+        let found_le = a.le(&b);
+        let found_ge = a.ge(&b);
+
+        let a1 = mgr.variable("a1");
+        let a2 = mgr.variable("a2");
+        let a3 = mgr.variable("a3");
+        let a4 = mgr.variable("a4");
+        let a5 = mgr.variable("a5");
+        let b1 = mgr.variable("b1");
+        let b2 = mgr.variable("b2");
+        let b3 = mgr.variable("b3");
+        let b4 = mgr.variable("b4");
+        let b5 = mgr.variable("b5");
+        let a_unique = (a1 & !a2 & !a3 & !a4 & !a5)
+            | (!a1 & a2 & !a3 & !a4 & !a5)
+            | (!a1 & !a2 & a3 & !a4 & !a5)
+            | (!a1 & !a2 & !a3 & a4 & !a5)
+            | (!a1 & !a2 & !a3 & !a4 & a5);
+        let b_unique = (b1 & !b2 & !b3 & !b4 & !b5)
+            | (!b1 & b2 & !b3 & !b4 & !b5)
+            | (!b1 & !b2 & b3 & !b4 & !b5)
+            | (!b1 & !b2 & !b3 & b4 & !b5)
+            | (!b1 & !b2 & !b3 & !b4 & b5);
+        let a_eq_b = (a1 & b1) | (a2 & b2) | (a3 & b3) | (a4 & b4) | (a5 & b5);
+        let a_lt_b =
+            (a1 & (b2 | b3 | b4 | b5)) | (a2 & (b3 | b4 | b5)) | (a3 & (b4 | b5)) | (a4 & b5);
+        let a_gt_b =
+            (a2 & b1) | (a3 & (b1 | b2)) | (a4 & (b1 | b2 | b3)) | (a5 & (b1 | b2 | b3 | b4));
+        let a_le_b = (a1 & (b1 | b2 | b3 | b4 | b5))
+            | (a2 & (b2 | b3 | b4 | b5))
+            | (a3 & (b3 | b4 | b5))
+            | (a4 & (b4 | b5))
+            | (a5 & b5);
+        let a_ge_b = (a1 & b1)
+            | (a2 & (b1 | b2))
+            | (a3 & (b1 | b2 | b3))
+            | (a4 & (b1 | b2 | b3 | b4))
+            | (a5 & (b1 | b2 | b3 | b4 | b5));
+        let expected_eq = a_eq_b & a_unique & b_unique;
+        let expected_lt = a_lt_b & a_unique & b_unique;
+        let expected_gt = a_gt_b & a_unique & b_unique;
+        let expected_le = a_le_b & a_unique & b_unique;
+        let expected_ge = a_ge_b & a_unique & b_unique;
+
+        assert_eq!(found_a_unique, a_unique, "unique");
+        assert_eq!(found_b_unique, b_unique, "unique");
+        assert_eq!(found_eq, expected_eq, "eq");
+        assert_eq!(found_lt, expected_lt, "lt");
+        assert_eq!(found_le, expected_le, "le");
+        assert_eq!(found_gt, expected_gt, "gt");
+        assert_eq!(found_ge, expected_ge, "ge");
+    }
 
     const UNIQUE_ALGS: [(
         &'static str,
