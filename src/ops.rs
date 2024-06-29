@@ -25,12 +25,12 @@ impl BddManager {
 
     /// Gets or inserts the BDD for an implication expression.
     pub(crate) fn imply(&self, e1: BddId, e2: BddId) -> BddId {
-        self.ite(self.not(e1), BddId::ONE, e2)
+        self.ite(e1, e2, BddId::ONE)
     }
 
     /// Gets or inserts the BDD for a bidirectional implication expression.
     pub(crate) fn equals(&self, e1: BddId, e2: BddId) -> BddId {
-        self.or(self.and(e1, e2), self.and(self.not(e1), self.not(e2)))
+        self.ite(e1, e2, self.not(e2))
     }
 
     /// Computes the property that exactly one value is true.

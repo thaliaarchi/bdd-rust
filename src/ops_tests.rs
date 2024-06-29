@@ -2,10 +2,74 @@ use std::mem;
 
 use crate::{BddId, BddManager};
 
-const UNIQUE_ALGS: [(
-    &'static str,
-    fn(mgr: &BddManager, values: &[BddId]) -> BddId,
-); 10] = [
+macro_rules! binop(($name:ident, $ALGS_ARRAY:ident, $node_count:ident, $equivalence:ident $(,)?) => {
+    #[test]
+    fn $node_count() {
+        let mut ids = Vec::with_capacity($ALGS_ARRAY.len());
+        for (name, alg) in $ALGS_ARRAY {
+            let mgr = BddManager::new();
+            let a = mgr.variable("a").id();
+            let b = mgr.variable("b").id();
+            let id = alg(&mgr, a, b);
+            ids.push((name, id));
+        }
+        let mut sorted = ids.clone();
+        sorted.sort_by_key(|&(_, id)| id);
+        assert_eq!(ids, sorted);
+    }
+
+    #[test]
+    fn $equivalence() {
+        let mgr = BddManager::new();
+        let a = mgr.variable("a").id();
+        let b = mgr.variable("b").id();
+        let id = ($ALGS_ARRAY[0].1)(&mgr, a, b);
+        assert!(!id.is_const(), "{} computed a constant: {id:?}", stringify!($name));
+        for (name, alg) in &$ALGS_ARRAY[1..] {
+            let id2 = alg(&mgr, a, b);
+            assert_eq!(id2, id, "{name}");
+        }
+    }
+});
+
+binop!(
+    imply,
+    IMPLY_ALGS,
+    imply_algs_node_count,
+    imply_algs_equivalence,
+);
+
+const IMPLY_ALGS: [(&str, fn(mgr: &BddManager, e1: BddId, e2: BddId) -> BddId); 3] = [
+    ("imply", BddManager::imply),
+    ("imply_ite_not", imply_ite_not),
+    ("imply_simple", imply_simple),
+];
+
+fn imply_ite_not(mgr: &BddManager, e1: BddId, e2: BddId) -> BddId {
+    mgr.ite(mgr.not(e1), BddId::ONE, e2)
+}
+
+fn imply_simple(mgr: &BddManager, e1: BddId, e2: BddId) -> BddId {
+    mgr.or(mgr.not(e1), e2)
+}
+
+binop!(
+    equals,
+    EQUALS_ALGS,
+    equals_algs_node_count,
+    equals_algs_equivalence,
+);
+
+const EQUALS_ALGS: [(&str, fn(mgr: &BddManager, e1: BddId, e2: BddId) -> BddId); 2] = [
+    ("equals", BddManager::equals),
+    ("equals_simple", equals_simple),
+];
+
+fn equals_simple(mgr: &BddManager, e1: BddId, e2: BddId) -> BddId {
+    mgr.or(mgr.and(e1, e2), mgr.and(mgr.not(e1), mgr.not(e2)))
+}
+
+const UNIQUE_ALGS: [(&str, fn(mgr: &BddManager, values: &[BddId]) -> BddId); 10] = [
     ("unique_vars", BddManager::unique_vars),
     ("unique", BddManager::unique),
     ("unique_direct_ite", unique_direct_ite),
@@ -159,7 +223,7 @@ fn unique_algs_equivalence() {
         );
         for (name, unique_fn) in &UNIQUE_ALGS[1..] {
             let id2 = unique_fn(&mgr, &values);
-            assert_eq!(id, id2, "{name} differs with {n_vars} variables");
+            assert_eq!(id2, id, "{name} differs with {n_vars} variables");
         }
     }
 }
