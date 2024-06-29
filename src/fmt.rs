@@ -142,6 +142,22 @@ impl<'mgr> Bdd<'mgr> {
     }
 }
 
+/// Displays the BDD formatted as its Shannon expansion, with its ID.
+impl Debug for Bdd<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        struct DebugDisplay<T>(T);
+        impl<T: Display> Debug for DebugDisplay<T> {
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                Display::fmt(&self.0, f)
+            }
+        }
+        f.debug_tuple("Bdd")
+            .field(&self.id())
+            .field(&DebugDisplay(self))
+            .finish()
+    }
+}
+
 /// Displays the BDD formatted as its Shannon expansion.
 impl Display for Bdd<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -184,11 +200,5 @@ impl Display for DisplayDigraph<'_> {
         let reachable = bdd.mgr.reachable(bdd.id);
         bdd.mgr
             .write_digraph(f, &format!("bdd{}", bdd.id.0), &mut reachable.into_iter())
-    }
-}
-
-impl Debug for Bdd<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("Bdd").field(&self.id.0).finish()
     }
 }
