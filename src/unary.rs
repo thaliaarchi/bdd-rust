@@ -235,9 +235,11 @@ mod tests {
     const UNIQUE_ALGS: [(
         &'static str,
         fn(mgr: &BddManager, values: &[BddId]) -> BddId,
-    ); 7] = [
+    ); 9] = [
         ("unique", unique),
         ("unique_direct_ite", unique_direct_ite),
+        ("unique_direct_ite2", unique_direct_ite2),
+        ("unique_direct_ite3", unique_direct_ite3),
         ("unique_direct_or", unique_direct_or),
         ("unique_dynamic", unique_dynamic),
         ("unique_squared_pairs", unique_squared_pairs),
@@ -246,6 +248,26 @@ mod tests {
     ];
 
     fn unique_direct_ite(mgr: &BddManager, values: &[BddId]) -> BddId {
+        let mut unique = BddId::ZERO;
+        let mut none = BddId::ONE;
+        for &v in values.iter().rev() {
+            unique = mgr.ite(v, none, unique);
+            none = mgr.ite(v, BddId::ZERO, none);
+        }
+        unique
+    }
+
+    fn unique_direct_ite2(mgr: &BddManager, values: &[BddId]) -> BddId {
+        let mut unique = BddId::ZERO;
+        let mut none = BddId::ONE;
+        for &v in values.iter().rev() {
+            unique = mgr.ite(v, none, unique);
+            none = mgr.and(mgr.not(v), none);
+        }
+        unique
+    }
+
+    fn unique_direct_ite3(mgr: &BddManager, values: &[BddId]) -> BddId {
         let mut unique = BddId::ZERO;
         let mut none = BddId::ONE;
         for &v in values.iter().rev() {
