@@ -34,7 +34,7 @@ impl<'mgr> Unary<'mgr> {
 
     /// Computes the property that exactly one value can be set at once.
     pub fn value(&self) -> Bdd<'_> {
-        self.mgr.wrap(unique(&self.mgr, &self.values))
+        self.mgr.wrap(self.mgr.unique_vars(&self.values))
     }
 
     pub fn equals(&self, rhs: &Unary<'mgr>) -> Bdd<'mgr> {
@@ -149,20 +149,6 @@ impl<'mgr> Unary<'mgr> {
     }
 }
 
-/// Computes the property that exactly one value can be set at once. This
-/// construction is optimal in that no superfluous nodes are inserted. The given
-/// values must be variable nodes and in sort order.
-fn unique(mgr: &BddManager, values: &[BddId]) -> BddId {
-    let mut unique = BddId::ZERO;
-    let mut none = BddId::ONE;
-    for &v in values.iter().rev() {
-        let var = mgr.get_node(v).as_var();
-        unique = mgr.insert_node(var, none, unique);
-        none = mgr.insert_node(var, BddId::ZERO, none);
-    }
-    unique
-}
-
 #[cfg(test)]
 mod tests {
     use std::mem;
@@ -235,8 +221,9 @@ mod tests {
     const UNIQUE_ALGS: [(
         &'static str,
         fn(mgr: &BddManager, values: &[BddId]) -> BddId,
-    ); 9] = [
-        ("unique", unique),
+    ); 10] = [
+        ("unique_vars", BddManager::unique_vars),
+        ("unique", BddManager::unique),
         ("unique_direct_ite", unique_direct_ite),
         ("unique_direct_ite2", unique_direct_ite2),
         ("unique_direct_ite3", unique_direct_ite3),

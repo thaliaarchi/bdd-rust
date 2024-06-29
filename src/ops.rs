@@ -32,6 +32,31 @@ impl BddManager {
     pub(crate) fn equals(&self, e1: BddId, e2: BddId) -> BddId {
         self.or(self.and(e1, e2), self.and(self.not(e1), self.not(e2)))
     }
+
+    /// Computes the property that exactly one value is true.
+    pub(crate) fn unique(&self, values: &[BddId]) -> BddId {
+        let mut unique = BddId::ZERO;
+        let mut none = BddId::ONE;
+        for &v in values.iter().rev() {
+            unique = self.ite(v, none, unique);
+            none = self.ite(v, BddId::ZERO, none);
+        }
+        unique
+    }
+
+    /// Computes the property that exactly one value is true. The given values
+    /// must be variable nodes. This construction is optimal when the BDDs are
+    /// variable nodes in increasing `Var` order.
+    pub(crate) fn unique_vars(&self, vars: &[BddId]) -> BddId {
+        let mut unique = BddId::ZERO;
+        let mut none = BddId::ONE;
+        for &v in vars.iter().rev() {
+            let var = self.get_node(v).as_var();
+            unique = self.insert_node(var, none, unique);
+            none = self.insert_node(var, BddId::ZERO, none);
+        }
+        unique
+    }
 }
 
 impl<'mgr> Bdd<'mgr> {
