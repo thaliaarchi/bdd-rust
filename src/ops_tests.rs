@@ -2,20 +2,26 @@ use std::mem;
 
 use crate::{BddId, BddManager};
 
-macro_rules! binop(($name:ident, $ALGS_ARRAY:ident, $node_count:ident, $equivalence:ident $(,)?) => {
+fn is_sorted<T: Clone + Ord>(values: &[(&str, T)]) -> bool {
+    let mut sorted = values.to_vec();
+    sorted.sort_by_key(|(_, v)| v.clone());
+    values == sorted
+}
+
+macro_rules! binop(($ALGS_ARRAY:ident, $node_count:ident, $equivalence:ident $(,)?) => {
     #[test]
     fn $node_count() {
-        let mut ids = Vec::with_capacity($ALGS_ARRAY.len());
+        let mut forwards = Vec::with_capacity($ALGS_ARRAY.len());
+        let mut reverse = Vec::with_capacity($ALGS_ARRAY.len());
         for (name, alg) in $ALGS_ARRAY {
             let mgr = BddManager::new();
             let a = mgr.variable("a").id();
             let b = mgr.variable("b").id();
-            let id = alg(&mgr, a, b);
-            ids.push((name, id));
+            forwards.push((name, alg(&mgr, a, b)));
+            reverse.push((name, alg(&mgr, b, a)));
         }
-        let mut sorted = ids.clone();
-        sorted.sort_by_key(|&(_, id)| id);
-        assert_eq!(ids, sorted);
+        assert!(is_sorted(&forwards), "out of order for forwards: {forwards:?}");
+        assert!(is_sorted(&reverse), "out of order for reverse: {reverse:?}");
     }
 
     #[test]
@@ -24,7 +30,7 @@ macro_rules! binop(($name:ident, $ALGS_ARRAY:ident, $node_count:ident, $equivale
         let a = mgr.variable("a").id();
         let b = mgr.variable("b").id();
         let id = ($ALGS_ARRAY[0].1)(&mgr, a, b);
-        assert!(!id.is_const(), "{} computed a constant: {id:?}", stringify!($name));
+        assert!(!id.is_const(), "computed a constant: {id:?}");
         for (name, alg) in &$ALGS_ARRAY[1..] {
             let id2 = alg(&mgr, a, b);
             assert_eq!(id2, id, "{name}");
@@ -32,12 +38,7 @@ macro_rules! binop(($name:ident, $ALGS_ARRAY:ident, $node_count:ident, $equivale
     }
 });
 
-binop!(
-    imply,
-    IMPLY_ALGS,
-    imply_algs_node_count,
-    imply_algs_equivalence,
-);
+binop!(IMPLY_ALGS, imply_algs_node_count, imply_algs_equivalence);
 
 const IMPLY_ALGS: [(&str, fn(mgr: &BddManager, e1: BddId, e2: BddId) -> BddId); 3] = [
     ("imply", BddManager::imply),
@@ -53,12 +54,7 @@ fn imply_simple(mgr: &BddManager, e1: BddId, e2: BddId) -> BddId {
     mgr.or(mgr.not(e1), e2)
 }
 
-binop!(
-    equals,
-    EQUALS_ALGS,
-    equals_algs_node_count,
-    equals_algs_equivalence,
-);
+binop!(EQUALS_ALGS, equals_algs_node_count, equals_algs_equivalence);
 
 const EQUALS_ALGS: [(&str, fn(mgr: &BddManager, e1: BddId, e2: BddId) -> BddId); 2] = [
     ("equals", BddManager::equals),
@@ -199,15 +195,23 @@ fn insert_variables(mgr: &BddManager, n_vars: usize) -> Vec<BddId> {
 #[test]
 fn unique_algs_node_count() {
     for n_vars in [0, 1, 5, 16] {
-        let mut ids = Vec::with_capacity(UNIQUE_ALGS.len());
+        let mut forwards = Vec::with_capacity(UNIQUE_ALGS.len());
+        let mut reverse = Vec::with_capacity(UNIQUE_ALGS.len());
         for (name, unique_fn) in UNIQUE_ALGS {
             let mgr = BddManager::new();
-            let id = unique_fn(&mgr, &insert_variables(&mgr, n_vars));
-            ids.push((name, id));
+            let vars = insert_variables(&mgr, n_vars);
+            forwards.push((name, unique_fn(&mgr, &vars)));
+            if name != "unique_vars" {
+                let mut vars_reverse = vars.clone();
+                vars_reverse.reverse();
+                reverse.push((name, unique_fn(&mgr, &vars_reverse)));
+            }
         }
-        let mut sorted = ids.clone();
-        sorted.sort_by_key(|&(_, id)| id);
-        assert_eq!(ids, sorted);
+        assert!(
+            is_sorted(&forwards),
+            "out of order for forwards: {forwards:?}",
+        );
+        assert!(is_sorted(&reverse), "out of order for reverse: {reverse:?}");
     }
 }
 
