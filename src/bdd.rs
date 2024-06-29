@@ -212,13 +212,45 @@ impl<'mgr> Bdd<'mgr> {
         unsafe { self.mgr.nodes.get_cloned_unchecked(self.id) }
     }
 
-    /// Computes the number of assignments that would satisfy this BDD.
+    /// Computes the number of propositions that would satisfy this BDD.
     pub fn cardinality(&self) -> usize {
         let node = self.node();
         if let Some(v) = node.var.as_const() {
             return v as usize;
         }
         self.mgr.wrap(node.high).cardinality() + self.mgr.wrap(node.low).cardinality()
+    }
+
+    /// Iterates the propositions in this BDD.
+    pub fn iter<F: FnMut(Bdd<'mgr>)>(&self, mut each: F) {
+        if !self.mgr.vars.is_empty() {
+            self.iter_(&mut each, 0, BddId::ONE);
+        }
+    }
+
+    fn iter_<F: FnMut(Bdd<'mgr>)>(&self, each: &mut F, var_index: usize, acc: BddId) {
+        let mgr = self.mgr;
+        if self.id.is_const() {
+            if self.id == BddId::ONE {
+                each(mgr.wrap(acc));
+            }
+            return;
+        }
+        debug_assert!(var_index < self.mgr.vars.len());
+        let var = Var::from_usize(var_index);
+        let node = self.node();
+        let (high, low) = if node.var == var {
+            (node.high, node.low)
+        } else if node.var > var {
+            (self.id, self.id)
+        } else {
+            panic!("unordered iteration");
+        };
+        let var = mgr.insert_var_id(var);
+        let acc_high = mgr.ite(var, acc, BddId::ZERO);
+        let acc_low = mgr.ite(var, BddId::ZERO, acc);
+        mgr.wrap(high).iter_(each, var_index + 1, acc_high);
+        mgr.wrap(low).iter_(each, var_index + 1, acc_low);
     }
 
     #[inline]

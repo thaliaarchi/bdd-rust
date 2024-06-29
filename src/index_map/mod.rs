@@ -106,6 +106,12 @@ impl<K, V, S> IndexMap<K, V, S> {
     pub fn len(&self) -> usize {
         self.inner().values.len()
     }
+
+    /// Returns whether this map has no values.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl<K: IndexKey + Copy, V: PartialEq + Hash, S: BuildHasher> IndexMap<K, V, S> {
