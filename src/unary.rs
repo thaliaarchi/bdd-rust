@@ -37,6 +37,24 @@ impl<'mgr> Unary<'mgr> {
         self.mgr.wrap(self.mgr.unique_vars(&self.values))
     }
 
+    /// Determines whether only a single value for this unary number satisfies
+    /// the BDD and returns it.
+    pub fn extract_const(&self, e: Bdd<'mgr>) -> Option<i64> {
+        Bdd::assert_manager(self.mgr, e.mgr);
+        let mut extracted = None;
+        for (&variant, value) in self.values.iter().zip(self.bounds.clone()) {
+            let intersect = self.mgr.wrap(variant) & e;
+            if intersect.id() != BddId::ZERO {
+                if extracted.is_none() {
+                    extracted = Some(value);
+                } else {
+                    return None;
+                }
+            }
+        }
+        extracted
+    }
+
     pub fn equals(&self, rhs: &Unary<'mgr>) -> Bdd<'mgr> {
         Bdd::assert_manager(self.mgr, rhs.mgr);
         assert_eq!(self.bounds, rhs.bounds, "unimplemented");
