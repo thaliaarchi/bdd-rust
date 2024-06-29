@@ -101,21 +101,27 @@ impl BddManager {
         let node_then = self.get_node(e_then);
         let node_else = self.get_node(e_else);
 
-        // Cofactor each sub-function by the minimum variable
-        let var = node_if.var.min(node_then.var).min(node_else.var);
-        let (co1_if, co0_if) = node_if.cofactor(e_if, var);
-        let (co1_then, co0_then) = node_then.cofactor(e_then, var);
-        let (co1_else, co0_else) = node_else.cofactor(e_else, var);
+        let node = if node_if.is_var() && node_if.var < node_then.var.min(node_else.var) {
+            // The variables are already ordered; no need to recurse
+            BddIte::new(node_if.var, e_then, e_else)
+        } else {
+            // Cofactor each sub-function by the minimum variable
+            let var = node_if.var.min(node_then.var.min(node_else.var));
+            let (co1_if, co0_if) = node_if.cofactor(e_if, var);
+            let (co1_then, co0_then) = node_then.cofactor(e_then, var);
+            let (co1_else, co0_else) = node_else.cofactor(e_else, var);
 
-        // Recurse on the cofactors until every variable has been expanded
-        let co1 = self.ite(co1_if, co1_then, co1_else);
-        let co0 = self.ite(co0_if, co0_then, co0_else);
+            // Recurse on the cofactors until every variable has been expanded
+            let co1 = self.ite(co1_if, co1_then, co1_else);
+            let co0 = self.ite(co0_if, co0_then, co0_else);
 
-        // Insert the resulting node
-        if co1 == co0 {
-            return co1;
-        }
-        self.nodes.insert(BddIte::new(var, co1, co0))
+            // Insert the resulting node
+            if co1 == co0 {
+                return co1;
+            }
+            BddIte::new(var, co1, co0)
+        };
+        self.nodes.insert(node)
     }
 
     /// Gets or inserts a node directly. It must already be reduced and ordered.
@@ -331,11 +337,12 @@ impl BddIte {
 
     #[inline]
     pub(crate) fn as_var(&self) -> Var {
-        debug_assert!(
-            !self.var.is_const() && self.high == BddId::ONE && self.low == BddId::ZERO,
-            "node is not a variable node",
-        );
+        debug_assert!(self.is_var(), "node is not a variable node");
         self.var
+    }
+
+    pub(crate) fn is_var(&self) -> bool {
+        !self.var.is_const() && self.high == BddId::ONE && self.low == BddId::ZERO
     }
 }
 
