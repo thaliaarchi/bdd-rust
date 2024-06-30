@@ -1,13 +1,13 @@
 use crate::{Bdd, BddId, BddManager};
 
-/// A set of BDDs.
-pub struct BddSet<'mgr> {
+/// A list of BDDs.
+pub struct BddList<'mgr> {
     bdds: Vec<BddId>,
     mgr: &'mgr BddManager,
 }
 
-impl<'mgr> BddSet<'mgr> {
-    /// Constructs a new `BddSet` containing the items of the iterator.
+impl<'mgr> BddList<'mgr> {
+    /// Constructs a new `BddList` containing the items of the iterator.
     pub fn new(mut bdds: impl Iterator<Item = Bdd<'mgr>>) -> Self {
         let (len, _) = bdds.size_hint();
         let Some(first) = bdds.next() else {
@@ -20,12 +20,12 @@ impl<'mgr> BddSet<'mgr> {
             Bdd::assert_manager(mgr, &bdd.mgr);
             bdd.id()
         }));
-        BddSet { bdds: ids, mgr }
+        BddList { bdds: ids, mgr }
     }
 
-    /// Constructs a new, empty `BddSet`.
+    /// Constructs a new, empty `BddList`.
     pub fn empty(mgr: &'mgr BddManager) -> Self {
-        BddSet {
+        BddList {
             bdds: Vec::new(),
             mgr,
         }
