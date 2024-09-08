@@ -255,6 +255,40 @@ impl<'mgr> Bdd<'mgr> {
         (high + low) << var_diff
     }
 
+    /// Limits the BDD to at most `count` elements.
+    pub fn take(&self, count: usize) -> (Bdd<'mgr>, usize) {
+        if self.mgr.variable_count() == 0 {
+            return (self.mgr.zero(), 0);
+        }
+        let (id, count) = self.take_(count, 0);
+        (self.mgr.wrap(id), count)
+    }
+
+    fn take_(&self, count: usize, var_index: usize) -> (BddId, usize) {
+        if count == 0 || self.id == BddId::ZERO {
+            return (BddId::ZERO, 0);
+        }
+        if self.id == BddId::ONE && var_index == self.mgr.variable_count() {
+            return (BddId::ONE, 1);
+        }
+        let node = self.node();
+        let var = Var::from_usize(var_index);
+        let (high, low) = if node.var == var {
+            (node.high, node.low)
+        } else {
+            debug_assert!(node.var > var, "unordered iteration");
+            (self.id, self.id)
+        };
+        let (high, high_size) = self.mgr.wrap(high).take_(count, var_index + 1);
+        let (low, low_size) = self.mgr.wrap(low).take_(count - high_size, var_index + 1);
+        let id = if high == low {
+            high
+        } else {
+            self.mgr.insert_node(var, high, low)
+        };
+        (id, high_size + low_size)
+    }
+
     /// Iterates the propositions in this BDD.
     pub fn iter<F: FnMut(Bdd<'mgr>)>(&self, mut each: F) {
         if !self.mgr.vars.is_empty() {
@@ -277,10 +311,9 @@ impl<'mgr> Bdd<'mgr> {
         let node = self.node();
         let (high, low) = if node.var == var {
             (node.high, node.low)
-        } else if node.var > var {
-            (self.id, self.id)
         } else {
-            panic!("unordered iteration");
+            debug_assert!(node.var > var, "unordered iteration");
+            (self.id, self.id)
         };
         let var = mgr.insert_var_id(var);
         let acc_high = mgr.ite(var, acc, BddId::ZERO);
@@ -505,5 +538,24 @@ mod tests {
         bdd.iter(|elem| elems.push(elem));
         assert_eq!(elems, [a & b, a & !b]);
         assert_eq!(bdd.cardinality(), 2);
+    }
+
+    #[test]
+    fn take() {
+        let mgr = BddManager::new();
+        let a = mgr.variable("a");
+        let b = mgr.variable("b");
+        let c = mgr.variable("c");
+        let d = mgr.variable("d");
+        let bdd = (a & b & c & d)
+            | (a & b & c & !d)
+            | (a & !b & c & d)
+            | (a & !b & !c & d)
+            | (!a & b & c & d)
+            | (!a & !b & !c & !d);
+        let (limited, count) = bdd.take(3);
+        let expected = (a & b & c & d) | (a & b & c & !d) | (a & !b & c & d);
+        assert_eq!(limited, expected);
+        assert_eq!(count, 3);
     }
 }
