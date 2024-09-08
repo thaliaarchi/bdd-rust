@@ -4,6 +4,10 @@ use hashbrown::{HashMap, HashSet};
 
 use crate::index_map::{IndexKey, IndexMap};
 
+// TODO:
+// - Use BddManager::insert_node in Bdd::iter instead of BddManager::ite.
+// - BUG: Bdd::cardinality does not account for “don't care” variables.
+
 /// A manager of binary decision diagrams.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BddManager {
@@ -246,11 +250,13 @@ impl<'mgr> Bdd<'mgr> {
     }
 
     fn iter_<F: FnMut(Bdd<'mgr>)>(&self, each: &mut F, var_index: usize, acc: BddId) {
+        if self.id == BddId::ZERO {
+            return;
+        }
         let mgr = self.mgr;
-        if self.id.is_const() {
-            if self.id == BddId::ONE {
-                each(mgr.wrap(acc));
-            }
+        if self.id == BddId::ONE && var_index >= self.mgr.vars.len() {
+            debug_assert!(var_index == self.mgr.vars.len());
+            each(mgr.wrap(acc));
             return;
         }
         debug_assert!(var_index < self.mgr.vars.len());
@@ -463,5 +469,16 @@ mod tests {
         ]);
         assert_eq!(mgr.nodes, *expected);
         assert_eq!(replaced.id(), BddId::from_usize(21));
+    }
+
+    #[test]
+    fn iter_const_tail_regress() {
+        let mgr = BddManager::new();
+        let a = mgr.variable("a");
+        let b = mgr.variable("b");
+        let bdd = a;
+        let mut elems = Vec::new();
+        bdd.iter(|elem| elems.push(elem));
+        assert_eq!(elems, [a & b, a & !b]);
     }
 }
