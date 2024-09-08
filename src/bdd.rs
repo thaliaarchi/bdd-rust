@@ -68,7 +68,8 @@ impl BddManager {
     /// Gets the node for the BDD id.
     #[inline]
     pub(crate) fn get_node(&self, id: BddId) -> BddIte {
-        self.nodes.get_cloned(id)
+        debug_assert!(id.as_usize() < self.node_count(), "ID out of bounds");
+        unsafe { self.nodes.get_cloned_unchecked(id) }
     }
 
     #[inline]
@@ -127,6 +128,12 @@ impl BddManager {
     /// Gets or inserts a node directly. It must already be reduced and ordered.
     pub(crate) fn insert_node(&self, var: Var, high: BddId, low: BddId) -> BddId {
         debug_assert!(
+            (var.is_const() || var.as_usize() < self.variable_count())
+                && high.as_usize() < self.node_count()
+                && low.as_usize() < self.node_count(),
+            "ID out of bounds",
+        );
+        debug_assert!(
             high != low
                 && !var.is_const()
                 && var < self.get_node(high).var
@@ -134,7 +141,7 @@ impl BddManager {
             "node is not reduced and ordered: {:?}",
             BddIte { var, high, low },
         );
-        self.nodes.insert(BddIte::new(var, high, low))
+        self.nodes.insert(BddIte { var, high, low })
     }
 
     /// Creates a map, which can be used to replace variables in this BDD.
@@ -172,10 +179,20 @@ impl BddManager {
         post_order: &mut Vec<BddId>,
         visited: &mut HashSet<BddId>,
     ) {
+        assert!(id.as_usize() < self.node_count(), "ID out of bounds");
+        self.append_post_order_(id, post_order, visited);
+    }
+
+    fn append_post_order_(
+        &self,
+        id: BddId,
+        post_order: &mut Vec<BddId>,
+        visited: &mut HashSet<BddId>,
+    ) {
         if visited.insert(id) {
             let node = self.get_node(id);
-            self.append_post_order(node.high, post_order, visited);
-            self.append_post_order(node.low, post_order, visited);
+            self.append_post_order_(node.high, post_order, visited);
+            self.append_post_order_(node.low, post_order, visited);
             post_order.push(id);
         }
     }
