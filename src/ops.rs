@@ -1,4 +1,6 @@
-use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not};
+use std::ops::{
+    BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Sub, SubAssign,
+};
 
 use crate::{Bdd, BddId, BddManager, VarReplaceMap};
 
@@ -21,6 +23,11 @@ impl BddManager {
     /// Gets or inserts the BDD for an XOR expression.
     pub(crate) fn xor(&self, e1: BddId, e2: BddId) -> BddId {
         self.ite(e1, self.not(e2), e2)
+    }
+
+    /// Gets or inserts the BDD for a difference expression.
+    pub(crate) fn sub(&self, e1: BddId, e2: BddId) -> BddId {
+        self.ite(e2, BddId::ZERO, e1)
     }
 
     /// Gets or inserts the BDD for an implication expression.
@@ -123,6 +130,7 @@ macro_rules! binop(($Op:ident $op:ident, $OpAssign:ident $op_assign:ident => $in
 });
 
 unop!(Not not => not);
+binop!(Sub sub, SubAssign sub_assign => sub);
 binop!(BitAnd bitand, BitAndAssign bitand_assign => and);
 binop!(BitOr bitor, BitOrAssign bitor_assign => or);
 binop!(BitXor bitxor, BitXorAssign bitxor_assign => xor);
