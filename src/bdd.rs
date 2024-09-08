@@ -6,7 +6,6 @@ use crate::index_map::{IndexKey, IndexMap};
 
 // TODO:
 // - Use BddManager::insert_node in Bdd::iter instead of BddManager::ite.
-// - BUG: Bdd::cardinality does not account for “don't care” variables.
 
 /// A manager of binary decision diagrams.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -235,11 +234,25 @@ impl<'mgr> Bdd<'mgr> {
 
     /// Computes the number of propositions that would satisfy this BDD.
     pub fn cardinality(&self) -> usize {
-        let node = self.node();
-        if let Some(v) = node.var.as_const() {
-            return v as usize;
+        if self.mgr.variable_count() == 0 {
+            return 0;
         }
-        self.mgr.wrap(node.high).cardinality() + self.mgr.wrap(node.low).cardinality()
+        self.cardinality_(0)
+    }
+
+    fn cardinality_(&self, var_index: usize) -> usize {
+        if self.id == BddId::ZERO {
+            return 0;
+        }
+        if self.id == BddId::ONE {
+            return 1 << (self.mgr.variable_count() - var_index);
+        }
+        let node = self.node();
+        let var_diff = node.var.as_usize() - var_index;
+        let var_index = var_index + var_diff + 1;
+        let high = self.mgr.wrap(node.high).cardinality_(var_index);
+        let low = self.mgr.wrap(node.low).cardinality_(var_index);
+        (high + low) << var_diff
     }
 
     /// Iterates the propositions in this BDD.
@@ -306,6 +319,15 @@ impl BddId {
         self.0 <= 1
     }
 
+    #[inline]
+    pub fn as_const(&self) -> Option<bool> {
+        if self.is_const() {
+            Some(self.is_one())
+        } else {
+            None
+        }
+    }
+
     /// Returns whether the BDD is 0.
     #[inline]
     pub fn is_zero(&self) -> bool {
@@ -354,6 +376,7 @@ impl IndexKey for Var {
     }
 
     fn as_usize(&self) -> usize {
+        debug_assert!(!self.is_const(), "convert constant to variable index");
         self.0 as usize - 2
     }
 }
@@ -449,6 +472,7 @@ mod tests {
         ];
         assert_eq!(mgr.nodes, *expected);
         assert_eq!(bdd.id(), BddId::from_usize(16));
+        assert_eq!(bdd.cardinality(), 9);
 
         // (a & b) | (!a & f) | (b & !f & e)
         mgr.variable("e");
@@ -480,5 +504,6 @@ mod tests {
         let mut elems = Vec::new();
         bdd.iter(|elem| elems.push(elem));
         assert_eq!(elems, [a & b, a & !b]);
+        assert_eq!(bdd.cardinality(), 2);
     }
 }
