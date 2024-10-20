@@ -1,6 +1,6 @@
 use std::{iter::FusedIterator, marker::PhantomData, ops::Range};
 
-use hashbrown::hash_map::DefaultHashBuilder;
+use hashbrown::DefaultHashBuilder;
 
 use super::{IndexKey, IndexMap, StableDeref};
 

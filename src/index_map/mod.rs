@@ -12,7 +12,7 @@ use std::{
     ops::Deref,
 };
 
-use hashbrown::{hash_map::DefaultHashBuilder, raw::RawTable};
+use hashbrown::{DefaultHashBuilder, HashTable};
 
 /// Bidirectional hash map, which monotonically grows and uses an index as the
 /// key.
@@ -28,7 +28,7 @@ struct IndexMapInner<K, V, S> {
     /// Key-to-value table.
     values: Vec<V>,
     /// Value-to-key map, which references the value in `self.values` by index.
-    keys: RawTable<K>,
+    keys: HashTable<K>,
     hash_builder: S,
 }
 
@@ -54,7 +54,7 @@ impl<K, V, S: Default> IndexMap<K, V, S> {
         IndexMap {
             inner: UnsafeCell::new(IndexMapInner {
                 values: Vec::with_capacity(capacity),
-                keys: RawTable::with_capacity(capacity),
+                keys: HashTable::with_capacity(capacity),
                 hash_builder: S::default(),
             }),
         }
@@ -119,24 +119,19 @@ impl<K: IndexKey + Copy, V: PartialEq + Hash, S: BuildHasher> IndexMap<K, V, S> 
     pub fn insert(&self, value: V) -> K {
         let inner = self.inner_mut();
         let hash = inner.hash_builder.hash_one(&value);
-        match inner.keys.find_or_find_insert_slot(
-            hash,
-            |key| &inner.values[key.as_usize()] == &value,
-            |key| inner.hash_builder.hash_one(&inner.values[key.as_usize()]),
-        ) {
-            Ok(bucket) => {
-                // SAFETY: The value in the bucket is copied, so does not
-                // outlive the table.
-                *unsafe { bucket.as_ref() }
-            }
-            Err(slot) => {
+        *inner
+            .keys
+            .entry(
+                hash,
+                |key| &inner.values[key.as_usize()] == &value,
+                |key| inner.hash_builder.hash_one(&inner.values[key.as_usize()]),
+            )
+            .or_insert_with(|| {
                 let id = K::from_usize(inner.values.len());
                 inner.values.push(value);
-                // SAFETY: The slot has not been mutated before this call.
-                unsafe { inner.keys.insert_in_slot(hash, slot, id) };
                 id
-            }
-        }
+            })
+            .get()
     }
 }
 
