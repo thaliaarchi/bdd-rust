@@ -3,6 +3,7 @@ name = "bdd"
 version = "0.1.0"
 authors = ["Thalia Archibald <thalia@archibald.dev>"]
 edition = "2021"
+rust-version = "1.82" # For std::slice::is_sorted
 description = "A library for binary decision diagrams"
 repository = "https://github.com/thaliaarchi/bdd-rust"
 license = "MPL-2.0"

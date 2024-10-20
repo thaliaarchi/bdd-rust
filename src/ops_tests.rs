@@ -2,11 +2,14 @@ use std::mem;
 
 use crate::{BddId, BddManager};
 
-fn is_sorted<T: Clone + Ord>(values: &[(&str, T)]) -> bool {
-    let mut sorted = values.to_vec();
-    sorted.sort_by_key(|(_, v)| v.clone());
-    values == sorted
-}
+macro_rules! assert_sorted(($slice:ident) => {
+    assert!(
+        $slice.is_sorted_by_key(|(_, v)| v),
+        "{} is out of order: {:?}",
+        stringify!($slice),
+        $slice,
+    )
+});
 
 macro_rules! binop(($ALGS_ARRAY:ident, $node_count:ident, $equivalence:ident $(,)?) => {
     #[test]
@@ -20,8 +23,8 @@ macro_rules! binop(($ALGS_ARRAY:ident, $node_count:ident, $equivalence:ident $(,
             forwards.push((name, alg(&mgr, a, b)));
             reverse.push((name, alg(&mgr, b, a)));
         }
-        assert!(is_sorted(&forwards), "out of order for forwards: {forwards:?}");
-        assert!(is_sorted(&reverse), "out of order for reverse: {reverse:?}");
+        assert_sorted!(forwards);
+        assert_sorted!(reverse);
     }
 
     #[test]
@@ -207,11 +210,8 @@ fn unique_algs_node_count() {
                 reverse.push((name, unique_fn(&mgr, &vars_reverse)));
             }
         }
-        assert!(
-            is_sorted(&forwards),
-            "out of order for forwards: {forwards:?}",
-        );
-        assert!(is_sorted(&reverse), "out of order for reverse: {reverse:?}");
+        assert_sorted!(forwards);
+        assert_sorted!(reverse);
     }
 }
 
