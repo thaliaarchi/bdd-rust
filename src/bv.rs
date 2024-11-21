@@ -3,7 +3,7 @@
 use std::{
     fmt::{self, Debug, Formatter},
     iter::repeat_n,
-    ops::{Add, AddAssign, Mul},
+    ops::{Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Mul},
 };
 
 use crate::{Bdd, BddId, BddManager};
@@ -51,6 +51,17 @@ impl<'mgr> Bv<'mgr> {
         Some(c)
     }
 
+    /// Computes an equality between two bit vectors.
+    pub fn equals(&self, rhs: &Self) -> Bdd<'mgr> {
+        Bdd::assert_manager(self.mgr, rhs.mgr);
+        self.mgr.wrap(self.mgr.bv_equals(&self.bits, &rhs.bits))
+    }
+
+    /// Computes an equality between a bit vector and a constant.
+    pub fn equals_const(&self, c: u64) -> Bdd<'mgr> {
+        self.mgr.wrap(self.mgr.bv_equals_const(&self.bits, c))
+    }
+
     /// Gets the bit at the given index.
     pub fn get(&self, i: usize) -> Bdd<'mgr> {
         self.mgr.wrap(self.bits[i])
@@ -85,6 +96,25 @@ impl Debug for Bv<'_> {
         }
     }
 }
+
+/// Implements an operation which zips bits from two bit vectors.
+macro_rules! bit_op(($bv_op:ident, $bv_op_assign:ident, $bool_op:ident, $doc:literal) => {
+    #[doc = concat!("Computes ", $doc, " of two bit vectors.")]
+    fn $bv_op(&self, x: &[BddId], y: &[BddId], z: &mut [BddId]) {
+        assert!(x.len() == y.len() && x.len() == z.len());
+        for i in 0..x.len() {
+            z[i] = self.$bool_op(x[i], y[i]);
+        }
+    }
+
+    #[doc = concat!("Computes in-place ", $doc, " of two bit vectors.")]
+    fn $bv_op_assign(&self, x: &mut [BddId], y: &[BddId]) {
+        assert_eq!(x.len(), y.len());
+        for i in 0..x.len() {
+            x[i] = self.$bool_op(x[i], y[i]);
+        }
+    }
+});
 
 /// Implements bit vector addition, variable over destination, which can alias
 /// $x or $y.
@@ -139,25 +169,70 @@ impl BddManager {
             }
         }
     }
-}
 
-impl<'mgr> Add for &Bv<'mgr> {
-    type Output = Bv<'mgr>;
+    bit_op!(bv_and, bv_and_assign, and, "Boolean AND");
+    bit_op!(bv_or, bv_or_assign, or, "Boolean OR");
+    bit_op!(bv_xor, bv_xor_assign, xor, "Boolean XOR");
 
-    fn add(self, rhs: Self) -> Self::Output {
-        Bdd::assert_manager(self.mgr, rhs.mgr);
-        let mut dest = Bv::new_const(self.mgr, 0, self.size());
-        self.mgr.bv_add(&self.bits, &rhs.bits, &mut dest.bits);
-        dest
+    /// Computes an equality between two bit vectors.
+    fn bv_equals(&self, x: &[BddId], y: &[BddId]) -> BddId {
+        assert_eq!(x.len(), y.len());
+        let mut eq = BddId::ONE;
+        for (&x, &y) in x.iter().zip(y) {
+            eq = self.and(eq, self.equals(x, y));
+            if eq.is_zero() {
+                break;
+            }
+        }
+        eq
+    }
+
+    /// Computes an equality between a bit vector and a constant.
+    fn bv_equals_const(&self, x: &[BddId], c: u64) -> BddId {
+        let mut eq = BddId::ONE;
+        let size = ((u64::BITS - c.leading_zeros()) as usize).min(x.len());
+        for (i, &x) in x[..size].iter().enumerate() {
+            eq = self.and(eq, self.equals(x, BddId::from(c & (1 << i) != 0)));
+            if eq.is_zero() {
+                break;
+            }
+        }
+        for &x in &x[size..] {
+            eq = self.and(eq, self.not(x));
+            if eq.is_zero() {
+                break;
+            }
+        }
+        eq
     }
 }
 
-impl AddAssign<&Self> for Bv<'_> {
-    fn add_assign(&mut self, rhs: &Self) {
-        Bdd::assert_manager(self.mgr, rhs.mgr);
-        self.mgr.bv_add_assign(&mut self.bits, &rhs.bits);
+macro_rules! binop(($Op:ident $op:ident $compute:ident, $OpAssign:ident $op_assign:ident $compute_assign:ident) => {
+    impl<'mgr> $Op for &Bv<'mgr> {
+        type Output = Bv<'mgr>;
+
+        #[inline]
+        fn $op(self, rhs: Self) -> Self::Output {
+            Bdd::assert_manager(self.mgr, rhs.mgr);
+            let mut dest = Bv::new_const(self.mgr, 0, self.size());
+            self.mgr.$compute(&self.bits, &rhs.bits, &mut dest.bits);
+            dest
+        }
     }
-}
+
+    impl<'mgr> $OpAssign<&Bv<'mgr>> for Bv<'mgr> {
+        #[inline]
+        fn $op_assign(&mut self, rhs: &Bv<'mgr>) {
+            Bdd::assert_manager(self.mgr, rhs.mgr);
+            self.mgr.$compute_assign(&mut self.bits, &rhs.bits);
+        }
+    }
+});
+
+binop!(Add add bv_add, AddAssign add_assign bv_add_assign);
+binop!(BitAnd bitand bv_and, BitAndAssign bitand_assign bv_and_assign);
+binop!(BitOr bitor bv_or, BitOrAssign bitor_assign bv_or_assign);
+binop!(BitXor bitxor bv_xor, BitXorAssign bitxor_assign bv_xor_assign);
 
 impl<'mgr> Mul for &Bv<'mgr> {
     type Output = Bv<'mgr>;
@@ -172,13 +247,14 @@ impl<'mgr> Mul for &Bv<'mgr> {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::{Add, Mul};
+    use std::ops::{Add, BitAnd, BitOr, BitXor, Mul};
 
     use crate::{bv::Bv, BddManager};
 
-    macro_rules! test_op_const(($test:ident, $trait:ident :: $op:ident, $const_op:ident) => {
+    macro_rules! test_binop_const(($test:ident, $trait:ident :: $op:ident, $f:expr) => {
         #[test]
         fn $test() {
+            const CONST_OP: fn(u64, u64) -> u64 = $f;
             const SIZE: usize = 7;
             const MAX: u64 = (1 << SIZE) - 1;
             let mgr = BddManager::new();
@@ -187,7 +263,7 @@ mod tests {
                     let x = Bv::new_const(&mgr, xc, SIZE);
                     let y = Bv::new_const(&mgr, yc, SIZE);
                     let z = $trait::$op(&x, &y);
-                    if z.as_const() != Some(xc.$const_op(yc) & MAX) {
+                    if z.as_const() != Some(CONST_OP(xc, yc) & MAX) {
                         panic!("{}({xc}, {yc}) = {z:?}", stringify!($op));
                     }
                 }
@@ -195,6 +271,9 @@ mod tests {
         }
     });
 
-    test_op_const!(add_const, Add::add, wrapping_add);
-    test_op_const!(mul_const, Mul::mul, wrapping_mul);
+    test_binop_const!(add_const, Add::add, |x, y| x.wrapping_add(y));
+    test_binop_const!(mul_const, Mul::mul, |x, y| x.wrapping_mul(y));
+    test_binop_const!(and_const, BitAnd::bitand, BitAnd::bitand);
+    test_binop_const!(or_const, BitOr::bitor, BitOr::bitor);
+    test_binop_const!(xor_const, BitXor::bitxor, BitXor::bitxor);
 }
