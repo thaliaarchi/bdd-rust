@@ -40,6 +40,21 @@ impl BddManager {
         self.ite(x, y, self.not(y))
     }
 
+    /// Computes single-bit addition with carry, i.e., a half adder. Returns sum
+    /// and carry bits.
+    pub(crate) fn add_carry(&self, x: BddId, y: BddId) -> (BddId, BddId) {
+        (self.xor(x, y), self.and(x, y))
+    }
+
+    /// Computes single-bit addition with carry in and out, i.e., a full adder.
+    /// Returns sum and carry bits.
+    pub(crate) fn add_carry_in(&self, x: BddId, y: BddId, c: BddId) -> (BddId, BddId) {
+        let xy = self.xor(x, y);
+        let z = self.xor(xy, c);
+        let c = self.or(self.and(xy, c), self.and(x, y));
+        (z, c)
+    }
+
     /// Computes the property that exactly one value is true.
     pub(crate) fn unique(&self, values: &[BddId]) -> BddId {
         let mut unique = BddId::ZERO;
@@ -87,6 +102,25 @@ impl<'mgr> Bdd<'mgr> {
     pub fn equals(&self, rhs: Self) -> Self {
         Self::assert_manager(self.mgr, rhs.mgr);
         self.mgr.wrap(self.mgr.equals(self.id, rhs.id))
+    }
+
+    /// Computes single-bit addition with carry, i.e., a half adder. Returns sum
+    /// and carry bits.
+    #[inline]
+    pub fn add_carry(&self, rhs: Self) -> (Self, Self) {
+        Self::assert_manager(self.mgr, rhs.mgr);
+        let (sum, carry) = self.mgr.add_carry(self.id, rhs.id);
+        (self.mgr.wrap(sum), self.mgr.wrap(carry))
+    }
+
+    /// Computes single-bit addition with carry in and out, i.e., a full adder.
+    /// Returns sum and carry bits.
+    #[inline]
+    pub fn add_carry_in(&self, rhs: Self, carry_in: Self) -> (Self, Self) {
+        Self::assert_manager(self.mgr, rhs.mgr);
+        Self::assert_manager(self.mgr, carry_in.mgr);
+        let (sum, carry) = self.mgr.add_carry_in(self.id, rhs.id, carry_in.id);
+        (self.mgr.wrap(sum), self.mgr.wrap(carry))
     }
 
     /// Creates a BDD isomorphic to self with the variables replaced according
