@@ -68,6 +68,12 @@ impl BddManager {
         self.wrap(BddId::ONE)
     }
 
+    /// Gets the BDD for a constant boolean.
+    #[inline]
+    pub fn bool(&self, b: bool) -> Bdd<'_> {
+        self.wrap(BddId::from(b))
+    }
+
     /// Gets the node for the BDD id.
     #[inline]
     pub(crate) fn get_node(&self, id: BddId) -> BddIte {
@@ -386,6 +392,16 @@ impl IndexKey for BddId {
     }
 }
 
+impl From<bool> for BddId {
+    fn from(b: bool) -> Self {
+        if b {
+            BddId::ONE
+        } else {
+            BddId::ZERO
+        }
+    }
+}
+
 impl Var {
     pub const ZERO: Var = Var(0);
     pub const ONE: Var = Var(1);
@@ -411,6 +427,16 @@ impl IndexKey for Var {
     fn as_usize(&self) -> usize {
         debug_assert!(!self.is_const(), "convert constant to variable index");
         self.0 as usize - 2
+    }
+}
+
+impl From<bool> for Var {
+    fn from(b: bool) -> Self {
+        if b {
+            Var::ONE
+        } else {
+            Var::ZERO
+        }
     }
 }
 
