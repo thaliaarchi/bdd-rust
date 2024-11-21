@@ -5,39 +5,39 @@ use std::ops::{
 use crate::{Bdd, BddId, BddManager, VarReplaceMap};
 
 impl BddManager {
-    /// Gets or inserts the BDD for a NOT expression.
-    pub(crate) fn not(&self, e: BddId) -> BddId {
-        self.ite(e, BddId::ZERO, BddId::ONE)
+    /// Computes Boolean NOT.
+    pub(crate) fn not(&self, x: BddId) -> BddId {
+        self.ite(x, BddId::ZERO, BddId::ONE)
     }
 
-    /// Gets or inserts the BDD for an AND expression.
-    pub(crate) fn and(&self, e1: BddId, e2: BddId) -> BddId {
-        self.ite(e1, e2, BddId::ZERO)
+    /// Computes Boolean AND.
+    pub(crate) fn and(&self, x: BddId, y: BddId) -> BddId {
+        self.ite(x, y, BddId::ZERO)
     }
 
-    /// Gets or inserts the BDD for an OR expression.
-    pub(crate) fn or(&self, e1: BddId, e2: BddId) -> BddId {
-        self.ite(e1, BddId::ONE, e2)
+    /// Computes Boolean OR.
+    pub(crate) fn or(&self, x: BddId, y: BddId) -> BddId {
+        self.ite(x, BddId::ONE, y)
     }
 
-    /// Gets or inserts the BDD for an XOR expression.
-    pub(crate) fn xor(&self, e1: BddId, e2: BddId) -> BddId {
-        self.ite(e1, self.not(e2), e2)
+    /// Computes Boolean XOR.
+    pub(crate) fn xor(&self, x: BddId, y: BddId) -> BddId {
+        self.ite(x, self.not(y), y)
     }
 
-    /// Gets or inserts the BDD for a difference expression.
-    pub(crate) fn sub(&self, e1: BddId, e2: BddId) -> BddId {
-        self.ite(e2, BddId::ZERO, e1)
+    /// Computes Boolean difference.
+    pub(crate) fn sub(&self, x: BddId, y: BddId) -> BddId {
+        self.ite(y, BddId::ZERO, x)
     }
 
-    /// Gets or inserts the BDD for an implication expression.
-    pub(crate) fn imply(&self, e1: BddId, e2: BddId) -> BddId {
-        self.ite(e1, e2, BddId::ONE)
+    /// Computes Boolean implication.
+    pub(crate) fn imply(&self, x: BddId, y: BddId) -> BddId {
+        self.ite(x, y, BddId::ONE)
     }
 
-    /// Gets or inserts the BDD for a bidirectional implication expression.
-    pub(crate) fn equals(&self, e1: BddId, e2: BddId) -> BddId {
-        self.ite(e1, e2, self.not(e2))
+    /// Computes Boolean bidirectional implication.
+    pub(crate) fn equals(&self, x: BddId, y: BddId) -> BddId {
+        self.ite(x, y, self.not(y))
     }
 
     /// Computes the property that exactly one value is true.
@@ -67,24 +67,24 @@ impl BddManager {
 }
 
 impl<'mgr> Bdd<'mgr> {
-    /// Gets or inserts the BDD for an if-then-else expression.
+    /// Computes an if-then-else expression.
     #[inline]
-    pub fn ite(&self, e_then: Bdd<'mgr>, e_else: Bdd<'mgr>) -> Bdd<'mgr> {
+    pub fn ite(&self, e_then: Self, e_else: Self) -> Self {
         Self::assert_manager(self.mgr, e_then.mgr);
         Self::assert_manager(self.mgr, e_else.mgr);
         self.mgr.wrap(self.mgr.ite(self.id, e_then.id, e_else.id))
     }
 
-    /// Gets or inserts the BDD for an implication expression.
+    /// Computes implication.
     #[inline]
-    pub fn imply(&self, rhs: Bdd<'mgr>) -> Bdd<'mgr> {
+    pub fn imply(&self, rhs: Self) -> Self {
         Self::assert_manager(self.mgr, rhs.mgr);
         self.mgr.wrap(self.mgr.imply(self.id, rhs.id))
     }
 
-    /// Gets or inserts the BDD for a bidirectional implication expression.
+    /// Computes bidirectional implication.
     #[inline]
-    pub fn equals(&self, rhs: Bdd<'mgr>) -> Bdd<'mgr> {
+    pub fn equals(&self, rhs: Self) -> Self {
         Self::assert_manager(self.mgr, rhs.mgr);
         self.mgr.wrap(self.mgr.equals(self.id, rhs.id))
     }
@@ -92,31 +92,31 @@ impl<'mgr> Bdd<'mgr> {
     /// Creates a BDD isomorphic to self with the variables replaced according
     /// to this mapping.
     #[inline]
-    pub fn replace(&self, map: &VarReplaceMap<'mgr>) -> Bdd<'mgr> {
+    pub fn replace(&self, map: &VarReplaceMap<'mgr>) -> Self {
         Self::assert_manager(self.mgr, map.mgr);
         self.mgr.wrap(self.mgr.replace(self.id, &map.replace))
     }
 }
 
-macro_rules! unop(($Op:ident $op:ident => $insert:ident) => {
+macro_rules! unop(($Op:ident $op:ident => $compute:ident) => {
     impl<'mgr> $Op for Bdd<'mgr> {
         type Output = Self;
 
         #[inline]
         fn $op(self) -> Self::Output {
-            self.mgr.wrap(self.mgr.$insert(self.id))
+            self.mgr.wrap(self.mgr.$compute(self.id))
         }
     }
 });
 
-macro_rules! binop(($Op:ident $op:ident, $OpAssign:ident $op_assign:ident => $insert:ident) => {
+macro_rules! binop(($Op:ident $op:ident, $OpAssign:ident $op_assign:ident => $compute:ident) => {
     impl<'mgr> $Op for Bdd<'mgr> {
         type Output = Self;
 
         #[inline]
         fn $op(self, rhs: Self) -> Self::Output {
             Self::assert_manager(self.mgr, rhs.mgr);
-            self.mgr.wrap(self.mgr.$insert(self.id, rhs.id))
+            self.mgr.wrap(self.mgr.$compute(self.id, rhs.id))
         }
     }
 
@@ -124,7 +124,7 @@ macro_rules! binop(($Op:ident $op:ident, $OpAssign:ident $op_assign:ident => $in
         #[inline]
         fn $op_assign(&mut self, rhs: Self) {
             Self::assert_manager(self.mgr, rhs.mgr);
-            self.id = self.mgr.$insert(self.id, rhs.id);
+            self.id = self.mgr.$compute(self.id, rhs.id);
         }
     }
 });

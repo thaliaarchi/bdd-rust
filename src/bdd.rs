@@ -96,7 +96,7 @@ impl BddManager {
         self.nodes.insert(BddIte::new(var, BddId::ONE, BddId::ZERO))
     }
 
-    /// Gets or inserts the BDD for an if-then-else expression.
+    /// Computes an if-then-else expression.
     pub(crate) fn ite(&self, e_if: BddId, e_then: BddId, e_else: BddId) -> BddId {
         // Terminal cases
         if e_then.is_one() && e_else.is_zero() {
