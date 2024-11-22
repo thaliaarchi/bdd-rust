@@ -3,13 +3,16 @@
 use std::{
     fmt::{self, Debug, Formatter},
     iter::repeat_n,
-    ops::{Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Mul},
+    ops::{
+        Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Mul, Neg,
+        Not, Sub, SubAssign,
+    },
 };
 
 use crate::{Bdd, BddId, BddManager};
 
 // TODO:
-// - Implement multiply assign.
+// - Handle heterogeneous lengths in ops.
 
 /// An unsigned bit vector.
 #[derive(Clone)]
@@ -49,6 +52,16 @@ impl<'mgr> Bv<'mgr> {
             }
         }
         Some(c)
+    }
+
+    /// Computes in-place complement of a bit vector.
+    pub fn not_assign(&mut self) {
+        self.mgr.bv_not_assign(&mut self.bits);
+    }
+
+    /// Computes in-place negation of a bit vector.
+    pub fn neg_assign(&mut self) {
+        self.mgr.bv_neg_assign(&mut self.bits);
     }
 
     /// Computes an equality between two bit vectors.
@@ -100,10 +113,10 @@ impl Debug for Bv<'_> {
 /// Implements an operation which zips bits from two bit vectors.
 macro_rules! bit_op(($bv_op:ident, $bv_op_assign:ident, $bool_op:ident, $doc:literal) => {
     #[doc = concat!("Computes ", $doc, " of two bit vectors.")]
-    fn $bv_op(&self, x: &[BddId], y: &[BddId], z: &mut [BddId]) {
-        assert!(x.len() == y.len() && x.len() == z.len());
+    fn $bv_op(&self, x: &[BddId], y: &[BddId], out: &mut [BddId]) {
+        assert!(x.len() == y.len() && x.len() == out.len());
         for i in 0..x.len() {
-            z[i] = self.$bool_op(x[i], y[i]);
+            out[i] = self.$bool_op(x[i], y[i]);
         }
     }
 
@@ -116,32 +129,89 @@ macro_rules! bit_op(($bv_op:ident, $bv_op_assign:ident, $bool_op:ident, $doc:lit
     }
 });
 
-/// Implements bit vector addition, variable over destination, which can alias
-/// $x or $y.
-macro_rules! bv_add(($mgr:ident, $x:ident, $y:ident, $z:ident) => {{
+/// Implements bit vector addition, variable over destination $out, which can
+/// alias $x or $y.
+macro_rules! bv_add(($mgr:ident, $x:ident, $y:ident, $out:ident) => {{
     let len = $x.len();
-    assert!(len == $y.len() && len == $z.len());
+    assert!(len == $y.len() && len == $out.len());
     if len < 2 {
         if len == 1 {
-            $z[0] = $mgr.xor($x[0], $y[0]);
+            $out[0] = $mgr.xor($x[0], $y[0]);
         }
         return;
     }
-    let (z0, mut c) = $mgr.add_carry($x[0], $y[0]);
-    $z[0] = z0;
     let last = len - 1;
+    let mut c;
+    ($out[0], c) = $mgr.add_carry($x[0], $y[0]);
     for i in 1..last {
-        let (zi, ci) = $mgr.add_carry_in($x[i], $y[i], c);
-        $z[i] = zi;
-        c = ci;
+        ($out[i], c) = $mgr.add_carry_in($x[i], $y[i], c);
     }
-    $z[last] = $mgr.xor($mgr.xor($x[last], $y[last]), c);
+    $out[last] = $mgr.xor($mgr.xor($x[last], $y[last]), c);
+}});
+
+/// Implements bit vector subtraction, variable over destination $out, which can
+/// alias $x or $y.
+macro_rules! bv_sub(($mgr:ident, $x:ident, $y:ident, $out:ident) => {{
+    let len = $x.len();
+    assert!(len == $y.len() && len == $out.len());
+    if len < 2 {
+        if len == 1 {
+            $out[0] = $mgr.xor($x[0], $y[0]);
+        }
+        return;
+    }
+    let last = len - 1;
+    let mut c = BddId::ONE;
+    for i in 0..last {
+        ($out[i], c) = $mgr.add_carry_in($x[i], $mgr.not($y[i]), c);
+    }
+    $out[last] = $mgr.xor($mgr.equals($x[last], $y[last]), c);
 }});
 
 impl BddManager {
+    /// Computes complement of a bit vector.
+    fn bv_not(&self, x: &[BddId], out: &mut [BddId]) {
+        for (&xb, outb) in x.iter().zip(out.iter_mut()) {
+            *outb = self.not(xb);
+        }
+        if x.len() < out.len() {
+            for outb in &mut out[x.len()..] {
+                *outb = BddId::ONE;
+            }
+        }
+    }
+
+    /// Computes in-place complement of a bit vector.
+    fn bv_not_assign(&self, x: &mut [BddId]) {
+        for xb in x {
+            *xb = self.not(*xb);
+        }
+    }
+
+    /// Computes negation of a bit vector.
+    fn bv_neg(&self, x: &[BddId], out: &mut [BddId]) {
+        let mut c = BddId::ONE;
+        for (&xb, outb) in x.iter().zip(out.iter_mut()) {
+            (*outb, c) = self.add_carry(self.not(xb), c);
+        }
+        if x.len() < out.len() {
+            for outb in &mut out[x.len()..] {
+                *outb = BddId::ONE;
+            }
+        }
+    }
+
+    /// Computes in-place negation of a bit vector.
+    fn bv_neg_assign(&self, x: &mut [BddId]) {
+        let mut c = BddId::ONE;
+        for xi in x {
+            (*xi, c) = self.add_carry(self.not(*xi), c);
+        }
+    }
+
     /// Computes addition of two bit vectors.
-    fn bv_add(&self, x: &[BddId], y: &[BddId], z: &mut [BddId]) {
-        bv_add!(self, x, y, z);
+    fn bv_add(&self, x: &[BddId], y: &[BddId], out: &mut [BddId]) {
+        bv_add!(self, x, y, out);
     }
 
     /// Computes in-place addition of two bit vectors.
@@ -149,23 +219,31 @@ impl BddManager {
         bv_add!(self, x, y, x);
     }
 
+    /// Computes subtraction of two bit vectors.
+    fn bv_sub(&self, x: &[BddId], y: &[BddId], out: &mut [BddId]) {
+        bv_sub!(self, x, y, out);
+    }
+
+    /// Computes in-place subtraction of two bit vectors.
+    fn bv_sub_assign(&self, x: &mut [BddId], y: &[BddId]) {
+        bv_sub!(self, x, y, x);
+    }
+
     /// Computes multiplication of two bit vectors.
-    fn bv_mul(&self, x: &[BddId], y: &[BddId], z: &mut [BddId]) {
+    fn bv_mul(&self, x: &[BddId], y: &[BddId], out: &mut [BddId]) {
         let len = x.len();
-        assert!(len == y.len() && len == z.len());
+        assert!(len == y.len() && len == out.len());
         for i in 0..len {
-            z[i] = self.and(x[0], y[i]);
+            out[i] = self.and(x[0], y[i]);
         }
         if len < 2 {
             return;
         }
+        let mut c;
         for i in 1..len {
-            let (zi, mut c) = self.add_carry(self.and(x[i], y[0]), z[i]);
-            z[i] = zi;
+            (out[i], c) = self.add_carry(self.and(x[i], y[0]), out[i]);
             for j in i + 1..len {
-                let (zj, cj) = self.add_carry_in(self.and(x[i], y[j - i]), z[j], c);
-                z[j] = zj;
-                c = cj;
+                (out[j], c) = self.add_carry_in(self.and(x[i], y[j - i]), out[j], c);
             }
         }
     }
@@ -178,8 +256,8 @@ impl BddManager {
     fn bv_equals(&self, x: &[BddId], y: &[BddId]) -> BddId {
         assert_eq!(x.len(), y.len());
         let mut eq = BddId::ONE;
-        for (&x, &y) in x.iter().zip(y) {
-            eq = self.and(eq, self.equals(x, y));
+        for (&xb, &y) in x.iter().zip(y) {
+            eq = self.and(eq, self.equals(xb, y));
             if eq.is_zero() {
                 break;
             }
@@ -197,8 +275,8 @@ impl BddManager {
                 break;
             }
         }
-        for &x in &x[size..] {
-            eq = self.and(eq, self.not(x));
+        for &xb in &x[size..] {
+            eq = self.and(eq, self.not(xb));
             if eq.is_zero() {
                 break;
             }
@@ -207,7 +285,20 @@ impl BddManager {
     }
 }
 
-macro_rules! binop(($Op:ident $op:ident $compute:ident, $OpAssign:ident $op_assign:ident $compute_assign:ident) => {
+macro_rules! unop(($Op:ident $op:ident $compute:ident) => {
+    impl<'mgr> $Op for &Bv<'mgr> {
+        type Output = Bv<'mgr>;
+
+        #[inline]
+        fn $op(self) -> Self::Output {
+            let mut out = Bv::new_const(self.mgr, 0, self.size());
+            self.mgr.$compute(&self.bits, &mut out.bits);
+            out
+        }
+    }
+});
+
+macro_rules! binop(($Op:ident $op:ident $compute:ident $(, $OpAssign:ident $op_assign:ident $compute_assign:ident)?) => {
     impl<'mgr> $Op for &Bv<'mgr> {
         type Output = Bv<'mgr>;
 
@@ -220,60 +311,75 @@ macro_rules! binop(($Op:ident $op:ident $compute:ident, $OpAssign:ident $op_assi
         }
     }
 
-    impl<'mgr> $OpAssign<&Bv<'mgr>> for Bv<'mgr> {
+    $(impl<'mgr> $OpAssign<&Bv<'mgr>> for Bv<'mgr> {
         #[inline]
         fn $op_assign(&mut self, rhs: &Bv<'mgr>) {
             Bdd::assert_manager(self.mgr, rhs.mgr);
             self.mgr.$compute_assign(&mut self.bits, &rhs.bits);
         }
-    }
+    })?
 });
 
+unop!(Not not bv_not);
+unop!(Neg neg bv_neg);
 binop!(Add add bv_add, AddAssign add_assign bv_add_assign);
+binop!(Sub sub bv_sub, SubAssign sub_assign bv_sub_assign);
+binop!(Mul mul bv_mul);
 binop!(BitAnd bitand bv_and, BitAndAssign bitand_assign bv_and_assign);
 binop!(BitOr bitor bv_or, BitOrAssign bitor_assign bv_or_assign);
 binop!(BitXor bitxor bv_xor, BitXorAssign bitxor_assign bv_xor_assign);
 
-impl<'mgr> Mul for &Bv<'mgr> {
-    type Output = Bv<'mgr>;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        Bdd::assert_manager(self.mgr, rhs.mgr);
-        let mut dest = Bv::new_const(self.mgr, 0, self.size());
-        self.mgr.bv_mul(&self.bits, &rhs.bits, &mut dest.bits);
-        dest
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::ops::{Add, BitAnd, BitOr, BitXor, Mul};
+    use std::ops::{Add, BitAnd, BitOr, BitXor, Mul, Neg, Not, Sub};
 
     use crate::{bv::Bv, BddManager};
 
-    macro_rules! test_binop_const(($test:ident, $trait:ident :: $op:ident, $f:expr) => {
+    macro_rules! test_unop_const(($test:ident, $op:expr, $op_const:expr, $op_str:literal) => {
         #[test]
         fn $test() {
-            const CONST_OP: fn(u64, u64) -> u64 = $f;
-            const SIZE: usize = 7;
-            const MAX: u64 = (1 << SIZE) - 1;
-            let mgr = BddManager::new();
-            for xc in 0..=MAX {
-                for yc in 0..=MAX {
-                    let x = Bv::new_const(&mgr, xc, SIZE);
-                    let y = Bv::new_const(&mgr, yc, SIZE);
-                    let z = $trait::$op(&x, &y);
-                    if z.as_const() != Some(CONST_OP(xc, yc) & MAX) {
-                        panic!("{}({xc}, {yc}) = {z:?}", stringify!($op));
+            for size in 0..7 {
+                let max = (1 << size) - 1;
+                let mgr = BddManager::new();
+                for xc in 0..=max {
+                    let x = Bv::new_const(&mgr, xc, size);
+                    let y = $op(&x);
+                    let expect = $op_const(xc) & max;
+                    if y.as_const() != Some(expect) {
+                        panic!("{}{xc} = {y:?}; expect {expect}", $op_str);
                     }
                 }
             }
         }
     });
 
-    test_binop_const!(add_const, Add::add, |x, y| x.wrapping_add(y));
-    test_binop_const!(mul_const, Mul::mul, |x, y| x.wrapping_mul(y));
-    test_binop_const!(and_const, BitAnd::bitand, BitAnd::bitand);
-    test_binop_const!(or_const, BitOr::bitor, BitOr::bitor);
-    test_binop_const!(xor_const, BitXor::bitxor, BitXor::bitxor);
+    macro_rules! test_binop_const(($test:ident, $op:expr, $op_const:expr, $op_str:literal) => {
+        #[test]
+        fn $test() {
+            for size in 0..7 {
+                let max = (1 << size) - 1;
+                let mgr = BddManager::new();
+                for xc in 0..=max {
+                    for yc in 0..=max {
+                        let x = Bv::new_const(&mgr, xc, size);
+                        let y = Bv::new_const(&mgr, yc, size);
+                        let z = $op(&x, &y);
+                        let expect = $op_const(xc, yc) & max;
+                        if z.as_const() != Some(expect) {
+                            panic!("{xc} {} {yc} = {z:?}; expect {expect}", $op_str);
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    test_unop_const!(not_const, Not::not, Not::not, "!");
+    test_unop_const!(neg_const, Neg::neg, u64::wrapping_neg, "-");
+    test_binop_const!(add_const, Add::add, u64::wrapping_add, "+");
+    test_binop_const!(sub_const, Sub::sub, u64::wrapping_sub, "-");
+    test_binop_const!(mul_const, Mul::mul, u64::wrapping_mul, "*");
+    test_binop_const!(and_const, BitAnd::bitand, BitAnd::bitand, "&");
+    test_binop_const!(or_const, BitOr::bitor, BitOr::bitor, "|");
+    test_binop_const!(xor_const, BitXor::bitxor, BitXor::bitxor, "^");
 }
