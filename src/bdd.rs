@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, ops::Deref};
 
 use hashbrown::{HashMap, HashSet};
 
@@ -348,6 +348,14 @@ impl PartialEq for Bdd<'_> {
 }
 
 impl Eq for Bdd<'_> {}
+
+impl Deref for Bdd<'_> {
+    type Target = BddId;
+
+    fn deref(&self) -> &Self::Target {
+        &self.id
+    }
+}
 
 impl BddId {
     pub const ZERO: BddId = BddId(0);

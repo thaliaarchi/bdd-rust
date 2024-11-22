@@ -75,6 +75,30 @@ impl<'mgr> Bv<'mgr> {
         self.mgr.wrap(self.mgr.bv_equals_const(&self.bits, c))
     }
 
+    /// Computes less-than of two bit vectors.
+    pub fn lt(&self, rhs: &Bv) -> Bdd<'mgr> {
+        Bdd::assert_manager(self.mgr, rhs.mgr);
+        self.mgr.wrap(self.mgr.bv_lt(&self.bits, &rhs.bits))
+    }
+
+    /// Computes greater-than of two bit vectors.
+    pub fn gt(&self, rhs: &Bv) -> Bdd<'mgr> {
+        Bdd::assert_manager(self.mgr, rhs.mgr);
+        self.mgr.wrap(self.mgr.bv_gt(&self.bits, &rhs.bits))
+    }
+
+    /// Computes less-than-or-equal of two bit vectors.
+    pub fn le(&self, rhs: &Bv) -> Bdd<'mgr> {
+        Bdd::assert_manager(self.mgr, rhs.mgr);
+        self.mgr.wrap(self.mgr.bv_le(&self.bits, &rhs.bits))
+    }
+
+    /// Computes greater-than-or-equal of two bit vectors.
+    pub fn ge(&self, rhs: &Bv) -> Bdd<'mgr> {
+        Bdd::assert_manager(self.mgr, rhs.mgr);
+        self.mgr.wrap(self.mgr.bv_ge(&self.bits, &rhs.bits))
+    }
+
     /// Gets the bit at the given index.
     pub fn get(&self, i: usize) -> Bdd<'mgr> {
         self.mgr.wrap(self.bits[i])
@@ -283,6 +307,48 @@ impl BddManager {
         }
         eq
     }
+
+    /// Computes less-than of two bit vectors.
+    fn bv_lt(&self, x: &[BddId], y: &[BddId]) -> BddId {
+        let mut lt = BddId::ZERO;
+        if y.len() > x.len() {
+            for &yb in &y[x.len()..] {
+                lt = self.or(lt, yb);
+            }
+        }
+        let mut x_none = BddId::ONE;
+        if x.len() > y.len() {
+            for &xb in &x[y.len()..] {
+                x_none = self.and(x_none, self.not(xb));
+            }
+        }
+        let mut eq = BddId::ONE;
+        for i in (0..x.len().min(y.len())).rev() {
+            let not_xb = self.not(x[i]);
+            lt = self.or(lt, self.and(self.and(not_xb, y[i]), self.or(x_none, eq)));
+            if i == 0 {
+                break;
+            }
+            eq = self.and(eq, self.ite(y[i], x[i], not_xb));
+            x_none = self.and(x_none, not_xb);
+        }
+        lt
+    }
+
+    /// Computes greater-than of two bit vectors.
+    fn bv_gt(&self, x: &[BddId], y: &[BddId]) -> BddId {
+        self.bv_lt(y, x)
+    }
+
+    /// Computes less-than-or-equal of two bit vectors.
+    fn bv_le(&self, x: &[BddId], y: &[BddId]) -> BddId {
+        self.not(self.bv_lt(y, x))
+    }
+
+    /// Computes greater-than-or-equal of two bit vectors.
+    fn bv_ge(&self, x: &[BddId], y: &[BddId]) -> BddId {
+        self.not(self.bv_lt(x, y))
+    }
 }
 
 macro_rules! unop(($Op:ident $op:ident $compute:ident) => {
@@ -338,17 +404,22 @@ mod tests {
     macro_rules! test_unop_const(($test:ident, $op:expr, $op_const:expr, $op_str:literal) => {
         #[test]
         fn $test() {
+            let mut failed = 0;
+            let mgr = BddManager::new();
             for size in 0..7 {
                 let max = (1 << size) - 1;
-                let mgr = BddManager::new();
                 for xc in 0..=max {
                     let x = Bv::new_const(&mgr, xc, size);
                     let y = $op(&x);
                     let expect = $op_const(xc) & max;
                     if y.as_const() != Some(expect) {
-                        panic!("{}{xc} = {y:?}; expect {expect}", $op_str);
+                        println!("(size {size}) {}{xc} = {y:?}; expect {expect}", $op_str);
+                        failed += 1;
                     }
                 }
+            }
+            if failed > 0 {
+                panic!("{failed} failed");
             }
         }
     });
@@ -356,9 +427,10 @@ mod tests {
     macro_rules! test_binop_const(($test:ident, $op:expr, $op_const:expr, $op_str:literal) => {
         #[test]
         fn $test() {
+            let mut failed = 0;
+            let mgr = BddManager::new();
             for size in 0..7 {
                 let max = (1 << size) - 1;
-                let mgr = BddManager::new();
                 for xc in 0..=max {
                     for yc in 0..=max {
                         let x = Bv::new_const(&mgr, xc, size);
@@ -366,10 +438,40 @@ mod tests {
                         let z = $op(&x, &y);
                         let expect = $op_const(xc, yc) & max;
                         if z.as_const() != Some(expect) {
-                            panic!("{xc} {} {yc} = {z:?}; expect {expect}", $op_str);
+                            println!("(size {size}) {xc} {} {yc} = {z:?}; expect {expect}", $op_str);
+                            failed += 1;
                         }
                     }
                 }
+            }
+            if failed > 0 {
+                panic!("{failed} failed");
+            }
+        }
+    });
+
+    macro_rules! test_bool_binop_const(($test:ident, $op:expr, $op_const:expr, $op_str:literal) => {
+        #[test]
+        fn $test() {
+            let mut failed = 0;
+            let mgr = BddManager::new();
+            for size in 0..7 {
+                let max = (1 << size) - 1;
+                for xc in 0..=max {
+                    for yc in 0..=max {
+                        let x = Bv::new_const(&mgr, xc, size);
+                        let y = Bv::new_const(&mgr, yc, size);
+                        let z = $op(&x, &y);
+                        let expect = $op_const(xc, yc);
+                        if z.as_const() != Some(expect) {
+                            println!("(size {size}) {xc} {} {yc} = {z}; expect {}", $op_str, expect as u64);
+                            failed += 1;
+                        }
+                    }
+                }
+            }
+            if failed > 0 {
+                panic!("{failed} failed");
             }
         }
     });
@@ -382,4 +484,9 @@ mod tests {
     test_binop_const!(and_const, BitAnd::bitand, BitAnd::bitand, "&");
     test_binop_const!(or_const, BitOr::bitor, BitOr::bitor, "|");
     test_binop_const!(xor_const, BitXor::bitxor, BitXor::bitxor, "^");
+    test_bool_binop_const!(equals_const, Bv::equals, |x, y| x == y, "==");
+    test_bool_binop_const!(lt_const, Bv::lt, |x, y| x < y, "<");
+    test_bool_binop_const!(gt_const, Bv::gt, |x, y| x > y, ">");
+    test_bool_binop_const!(le_const, Bv::le, |x, y| x <= y, "<=");
+    test_bool_binop_const!(ge_const, Bv::ge, |x, y| x >= y, ">=");
 }
