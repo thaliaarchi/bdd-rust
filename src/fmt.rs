@@ -10,14 +10,14 @@ use crate::{Bdd, BddId, BddManager, Var};
 #[derive(Clone)]
 pub struct DisplayTable<'mgr>(&'mgr BddManager);
 
-/// A wrapper for `BddManager`, which displays all BDDs in the manager as a
+/// A wrapper for `BddManager`, which displays a set of BDDs in the manager as a
 /// GraphViz directed graph.
 #[derive(Clone)]
-pub struct DisplayDigraphAll<'mgr>(&'mgr BddManager);
-
-/// A wrapper for `Bdd`, which displays the BDD as a GraphViz directed graph.
-#[derive(Clone)]
-pub struct DisplayDigraph<'mgr>(Bdd<'mgr>);
+pub struct DisplayDigraph<'mgr> {
+    mgr: &'mgr BddManager,
+    title: String,
+    nodes: Option<BTreeSet<BddId>>,
+}
 
 impl BddManager {
     /// Displays all nodes in the manager as a table.
@@ -25,9 +25,30 @@ impl BddManager {
         DisplayTable(self)
     }
 
+    /// Displays a set of BDDs in the manager as a GraphViz directed graph.
+    pub fn digraph<'mgr, I: IntoIterator<Item = Bdd<'mgr>>>(
+        &'mgr self,
+        nodes: I,
+    ) -> DisplayDigraph<'mgr> {
+        let mut reachable = BTreeSet::new();
+        for node in nodes {
+            Bdd::assert_manager(self, &node.mgr);
+            self.append_reachable(node.id, &mut reachable);
+        }
+        DisplayDigraph {
+            mgr: self,
+            title: "bdds".to_owned(),
+            nodes: Some(reachable),
+        }
+    }
+
     /// Displays all BDDs in the manager as a GraphViz directed graph.
-    pub fn digraph_all(&self) -> DisplayDigraphAll<'_> {
-        DisplayDigraphAll(self)
+    pub fn digraph_all(&self) -> DisplayDigraph<'_> {
+        DisplayDigraph {
+            mgr: self,
+            title: "bdd_manager".to_owned(),
+            nodes: None,
+        }
     }
 
     fn get_var(&self, var: Var) -> &str {
@@ -94,7 +115,11 @@ impl BddManager {
 impl<'mgr> Bdd<'mgr> {
     /// Displays the BDD as a GraphViz directed graph.
     pub fn digraph(&self) -> DisplayDigraph<'mgr> {
-        DisplayDigraph(*self)
+        DisplayDigraph {
+            mgr: self.mgr,
+            title: format!("bdd{}", self.id.0),
+            nodes: Some(self.mgr.reachable(self.id)),
+        }
     }
 
     fn write_shannon(&self, f: &mut Formatter<'_>, root: bool) -> fmt::Result {
@@ -187,18 +212,14 @@ impl Display for DisplayTable<'_> {
     }
 }
 
-impl Display for DisplayDigraphAll<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        self.0
-            .write_digraph(f, "bdd_manager", &mut self.0.nodes.iter_keys())
-    }
-}
-
 impl Display for DisplayDigraph<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let bdd = self.0;
-        let reachable = bdd.mgr.reachable(bdd.id);
-        bdd.mgr
-            .write_digraph(f, &format!("bdd{}", bdd.id.0), &mut reachable.into_iter())
+        if let Some(nodes) = &self.nodes {
+            self.mgr
+                .write_digraph(f, &self.title, &mut nodes.into_iter().copied())
+        } else {
+            self.mgr
+                .write_digraph(f, &self.title, &mut self.mgr.nodes.iter_keys())
+        }
     }
 }
