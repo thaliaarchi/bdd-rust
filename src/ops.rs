@@ -26,6 +26,7 @@ impl BddManager {
     }
 
     /// Computes Boolean difference.
+    #[doc(alias = "andnot")]
     pub(crate) fn sub(&self, x: BddId, y: BddId) -> BddId {
         self.ite(y, BddId::ZERO, x)
     }
@@ -36,6 +37,7 @@ impl BddManager {
     }
 
     /// Computes Boolean bidirectional implication.
+    #[doc(alias = "xnor")]
     pub(crate) fn equals(&self, x: BddId, y: BddId) -> BddId {
         self.ite(x, y, self.not(y))
     }
@@ -83,6 +85,7 @@ impl BddManager {
 
 impl<'mgr> Bdd<'mgr> {
     /// Computes an if-then-else expression.
+    #[doc(alias = "mux")]
     #[inline]
     pub fn ite(&self, e_then: Self, e_else: Self) -> Self {
         Self::assert_manager(self.mgr, e_then.mgr);
@@ -98,6 +101,7 @@ impl<'mgr> Bdd<'mgr> {
     }
 
     /// Computes bidirectional implication.
+    #[doc(alias = "xnor")]
     #[inline]
     pub fn equals(&self, rhs: Self) -> Self {
         Self::assert_manager(self.mgr, rhs.mgr);

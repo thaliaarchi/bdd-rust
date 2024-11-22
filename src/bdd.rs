@@ -97,6 +97,7 @@ impl BddManager {
     }
 
     /// Computes an if-then-else expression.
+    #[doc(alias = "mux")]
     pub(crate) fn ite(&self, e_if: BddId, e_then: BddId, e_else: BddId) -> BddId {
         // Terminal cases
         if e_then.is_one() && e_else.is_zero() {
