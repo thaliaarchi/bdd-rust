@@ -4,8 +4,8 @@ use std::{
     fmt::{self, Debug, Formatter},
     iter::repeat_n,
     ops::{
-        Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Mul, Neg,
-        Not, Sub, SubAssign,
+        Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Div, Mul,
+        Neg, Not, Sub, SubAssign,
     },
 };
 
@@ -13,6 +13,7 @@ use crate::{Bdd, BddId, BddManager};
 
 // TODO:
 // - Handle heterogeneous lengths in ops.
+// - Eliminate or cache scratch buffers in bv_div.
 
 /// An unsigned bit vector.
 #[derive(Clone)]
@@ -299,6 +300,36 @@ impl BddManager {
         }
     }
 
+    /// Computes division of two bit vectors.
+    fn bv_div(&self, x: &[BddId], y: &[BddId], q: &mut [BddId]) {
+        assert_eq!(x.len(), q.len());
+        assert_eq!(y.len(), q.len());
+        let len = x.len();
+        let mut x = x.to_vec();
+        let mut diff = vec![BddId::ZERO; len];
+        for i in (0..len).rev() {
+            // let (diff, borrow) = x.overflowing_sub(y << i);
+            diff.copy_from_slice(&x);
+            let mut borrow = BddId::ZERO;
+            for j in i..len {
+                (diff[j], borrow) = self.sub_borrow_in(x[j], y[j - i], borrow);
+            }
+            // let shift_truncate = y << i >> i != y;
+            let mut shift_truncate = BddId::ZERO;
+            for j in len - i..len {
+                shift_truncate = self.or(shift_truncate, y[j]);
+            }
+            // let divides = !borrow && !shift_truncate;
+            let divides = self.nor(borrow, shift_truncate);
+            // x = if divides { diff } else { x };
+            for j in i..len {
+                x[j] = self.ite(divides, diff[j], x[j]);
+            }
+            // q |= (divides as _) << i;
+            q[i] = divides;
+        }
+    }
+
     bit_op!(bv_and, bv_and_assign, and, "Boolean AND");
     bit_op!(bv_or, bv_or_assign, or, "Boolean OR");
     bit_op!(bv_xor, bv_xor_assign, xor, "Boolean XOR");
@@ -430,15 +461,14 @@ unop!(Neg neg bv_neg);
 binop!(Add add bv_add, AddAssign add_assign bv_add_assign);
 binop!(Sub sub bv_sub, SubAssign sub_assign bv_sub_assign);
 binop!(Mul mul bv_mul);
+binop!(Div div bv_div);
 binop!(BitAnd bitand bv_and, BitAndAssign bitand_assign bv_and_assign);
 binop!(BitOr bitor bv_or, BitOrAssign bitor_assign bv_or_assign);
 binop!(BitXor bitxor bv_xor, BitXorAssign bitxor_assign bv_xor_assign);
 
 #[cfg(test)]
 mod tests {
-    use std::ops::{Add, BitAnd, BitOr, BitXor, Mul, Neg, Not, Sub};
-
-    use crate::{bv::Bv, BddManager};
+    use super::*;
 
     macro_rules! test_unop_const(($test:ident, $op:expr, $op_const:expr, $op_str:literal) => {
         #[test]
@@ -520,6 +550,7 @@ mod tests {
     test_binop_const!(add_const, Add::add, u64::wrapping_add, "+");
     test_binop_const!(sub_const, Sub::sub, u64::wrapping_sub, "-");
     test_binop_const!(mul_const, Mul::mul, u64::wrapping_mul, "*");
+    test_binop_const!(div_const, Div::div, total_div, "/");
     test_binop_const!(and_const, BitAnd::bitand, BitAnd::bitand, "&");
     test_binop_const!(or_const, BitOr::bitor, BitOr::bitor, "|");
     test_binop_const!(xor_const, BitXor::bitxor, BitXor::bitxor, "^");
@@ -528,4 +559,12 @@ mod tests {
     test_bool_binop_const!(gt_const, Bv::gt, |x, y| x > y, ">");
     test_bool_binop_const!(le_const, Bv::le, |x, y| x <= y, "<=");
     test_bool_binop_const!(ge_const, Bv::ge, |x, y| x >= y, ">=");
+
+    fn total_div(x: u64, y: u64) -> u64 {
+        if y == 0 {
+            u64::MAX // "infinity"
+        } else {
+            x / y
+        }
+    }
 }
