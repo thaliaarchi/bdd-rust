@@ -1,6 +1,4 @@
-use std::ops::{
-    BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Sub, SubAssign,
-};
+use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not};
 
 use crate::{Bdd, BddId, BddManager, VarReplaceMap};
 
@@ -25,9 +23,13 @@ impl BddManager {
         self.ite(x, self.not(y), y)
     }
 
-    /// Computes Boolean difference.
-    #[doc(alias = "andnot")]
-    pub(crate) fn sub(&self, x: BddId, y: BddId) -> BddId {
+    /// Computes Boolean NOR.
+    pub(crate) fn nor(&self, x: BddId, y: BddId) -> BddId {
+        self.ite(x, BddId::ZERO, self.not(y))
+    }
+
+    /// Computes Boolean AND NOT.
+    pub(crate) fn andnot(&self, x: BddId, y: BddId) -> BddId {
         self.ite(y, BddId::ZERO, x)
     }
 
@@ -50,11 +52,26 @@ impl BddManager {
 
     /// Computes single-bit addition with carry in and out, i.e., a full adder.
     /// Returns sum and carry bits.
-    pub(crate) fn add_carry_in(&self, x: BddId, y: BddId, c: BddId) -> (BddId, BddId) {
+    pub(crate) fn add_carry_in(&self, x: BddId, y: BddId, carry_in: BddId) -> (BddId, BddId) {
         let xy = self.xor(x, y);
-        let z = self.xor(xy, c);
-        let c = self.or(self.and(xy, c), self.and(x, y));
-        (z, c)
+        let sum = self.xor(xy, carry_in);
+        let carry_out = self.or(self.and(xy, carry_in), self.and(x, y));
+        (sum, carry_out)
+    }
+
+    /// Computes single-bit subtraction with borrow, i.e., a half subtracter.
+    /// Returns difference and borrow bits.
+    pub(crate) fn sub_borrow(&self, x: BddId, y: BddId) -> (BddId, BddId) {
+        (self.xor(x, y), self.andnot(y, x))
+    }
+
+    /// Computes single-bit subtraction with borrow in and out, i.e., a full
+    /// subtracter. Returns difference and borrow bits.
+    pub(crate) fn sub_borrow_in(&self, x: BddId, y: BddId, borrow_in: BddId) -> (BddId, BddId) {
+        let xy = self.xor(x, y);
+        let diff = self.xor(xy, borrow_in);
+        let borrow_out = self.or(self.andnot(borrow_in, xy), self.andnot(y, x));
+        (diff, borrow_out)
     }
 
     /// Computes the property that exactly one value is true.
@@ -93,6 +110,20 @@ impl<'mgr> Bdd<'mgr> {
         self.mgr.wrap(self.mgr.ite(self.id, e_then.id, e_else.id))
     }
 
+    /// Computes Boolean NOR.
+    #[inline]
+    pub fn nor(&self, rhs: Self) -> Self {
+        Self::assert_manager(self.mgr, rhs.mgr);
+        self.mgr.wrap(self.mgr.nor(self.id, rhs.id))
+    }
+
+    /// Computes Boolean AND NOT.
+    #[inline]
+    pub fn andnot(&self, rhs: Self) -> Self {
+        Self::assert_manager(self.mgr, rhs.mgr);
+        self.mgr.wrap(self.mgr.andnot(self.id, rhs.id))
+    }
+
     /// Computes implication.
     #[inline]
     pub fn imply(&self, rhs: Self) -> Self {
@@ -113,8 +144,8 @@ impl<'mgr> Bdd<'mgr> {
     #[inline]
     pub fn add_carry(&self, rhs: Self) -> (Self, Self) {
         Self::assert_manager(self.mgr, rhs.mgr);
-        let (sum, carry) = self.mgr.add_carry(self.id, rhs.id);
-        (self.mgr.wrap(sum), self.mgr.wrap(carry))
+        let (sum, carry_out) = self.mgr.add_carry(self.id, rhs.id);
+        (self.mgr.wrap(sum), self.mgr.wrap(carry_out))
     }
 
     /// Computes single-bit addition with carry in and out, i.e., a full adder.
@@ -123,8 +154,27 @@ impl<'mgr> Bdd<'mgr> {
     pub fn add_carry_in(&self, rhs: Self, carry_in: Self) -> (Self, Self) {
         Self::assert_manager(self.mgr, rhs.mgr);
         Self::assert_manager(self.mgr, carry_in.mgr);
-        let (sum, carry) = self.mgr.add_carry_in(self.id, rhs.id, carry_in.id);
-        (self.mgr.wrap(sum), self.mgr.wrap(carry))
+        let (sum, carry_out) = self.mgr.add_carry_in(self.id, rhs.id, carry_in.id);
+        (self.mgr.wrap(sum), self.mgr.wrap(carry_out))
+    }
+
+    /// Computes single-bit addition with carry, i.e., a half adder. Returns sum
+    /// and carry bits.
+    #[inline]
+    pub fn sub_borrow(&self, rhs: Self) -> (Self, Self) {
+        Self::assert_manager(self.mgr, rhs.mgr);
+        let (diff, borrow_out) = self.mgr.sub_borrow(self.id, rhs.id);
+        (self.mgr.wrap(diff), self.mgr.wrap(borrow_out))
+    }
+
+    /// Computes single-bit addition with carry in and out, i.e., a full adder.
+    /// Returns sum and carry bits.
+    #[inline]
+    pub fn sub_borrow_in(&self, rhs: Self, borrow_in: Self) -> (Self, Self) {
+        Self::assert_manager(self.mgr, rhs.mgr);
+        Self::assert_manager(self.mgr, borrow_in.mgr);
+        let (diff, borrow_out) = self.mgr.sub_borrow_in(self.id, rhs.id, borrow_in.id);
+        (self.mgr.wrap(diff), self.mgr.wrap(borrow_out))
     }
 
     /// Creates a BDD isomorphic to self with the variables replaced according
@@ -168,7 +218,6 @@ macro_rules! binop(($Op:ident $op:ident, $OpAssign:ident $op_assign:ident => $co
 });
 
 unop!(Not not => not);
-binop!(Sub sub, SubAssign sub_assign => sub);
 binop!(BitAnd bitand, BitAndAssign bitand_assign => and);
 binop!(BitOr bitor, BitOrAssign bitor_assign => or);
 binop!(BitXor bitxor, BitXorAssign bitxor_assign => xor);

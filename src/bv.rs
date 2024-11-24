@@ -22,7 +22,7 @@ pub struct Bv<'mgr> {
 }
 
 impl<'mgr> Bv<'mgr> {
-    /// Constructs a bit vector as a variable with a given size.
+    /// Constructs a bit vector as a variable.
     pub fn new_var(mgr: &'mgr BddManager, name: &str, size: usize) -> Self {
         let bits = (0..size)
             .map(|i| mgr.variable(format!("{name}{i}")).id())
@@ -30,12 +30,18 @@ impl<'mgr> Bv<'mgr> {
         Bv { bits, mgr }
     }
 
-    /// Constructs a bit vector from a constant value with a given size.
+    /// Constructs a bit vector with a constant value.
     pub fn new_const(mgr: &'mgr BddManager, c: u64, size: usize) -> Self {
-        let mut bits = repeat_n(BddId::ZERO, size).collect::<Box<[_]>>();
+        let mut bv = Bv::zero(mgr, size);
         for i in 0..size.min(u64::BITS as usize) {
-            bits[i] = BddId::from(c & (1 << i) != 0);
+            bv.bits[i] = BddId::from(c & (1 << i) != 0);
         }
+        bv
+    }
+
+    /// Constructs a bit vector with the value zero.
+    pub fn zero(mgr: &'mgr BddManager, size: usize) -> Self {
+        let bits = repeat_n(BddId::ZERO, size).collect::<Box<[_]>>();
         Bv { bits, mgr }
     }
 
@@ -97,6 +103,27 @@ impl<'mgr> Bv<'mgr> {
     pub fn ge(&self, rhs: &Bv) -> Bdd<'mgr> {
         Bdd::assert_manager(self.mgr, rhs.mgr);
         self.mgr.wrap(self.mgr.bv_ge(&self.bits, &rhs.bits))
+    }
+
+    /// Computes an if-then-else expression for bit vectors.
+    #[doc(alias = "mux")]
+    pub fn ite(if_: Bdd<'mgr>, then_: &Self, else_: &Self) -> Self {
+        let mgr = if_.mgr;
+        Bdd::assert_manager(mgr, then_.mgr);
+        Bdd::assert_manager(mgr, else_.mgr);
+        let mut out = Bv::zero(mgr, then_.size().min(else_.size()));
+        mgr.bv_ite(if_.id, &then_.bits, &else_.bits, &mut out.bits);
+        out
+    }
+
+    /// Computes an if-then-else expression for bit vectors.
+    #[doc(alias = "mux")]
+    pub fn ite_assign(&mut self, if_: Bdd<'mgr>, then_: &Self, else_: &Self) {
+        Bdd::assert_manager(self.mgr, if_.mgr);
+        Bdd::assert_manager(self.mgr, then_.mgr);
+        Bdd::assert_manager(self.mgr, else_.mgr);
+        self.mgr
+            .bv_ite(if_.id, &then_.bits, &else_.bits, &mut self.bits);
     }
 
     /// Gets the bit at the given index.
@@ -349,6 +376,18 @@ impl BddManager {
     fn bv_ge(&self, x: &[BddId], y: &[BddId]) -> BddId {
         self.not(self.bv_lt(x, y))
     }
+
+    /// Computes an if-then-else expression for bit vectors.
+    #[doc(alias = "mux")]
+    fn bv_ite(&self, if_: BddId, then_: &[BddId], else_: &[BddId], out: &mut [BddId]) {
+        for i in 0..out.len() {
+            out[i] = self.ite(
+                if_,
+                then_.get(i).copied().unwrap_or(BddId::ZERO),
+                else_.get(i).copied().unwrap_or(BddId::ZERO),
+            );
+        }
+    }
 }
 
 macro_rules! unop(($Op:ident $op:ident $compute:ident) => {
@@ -357,7 +396,7 @@ macro_rules! unop(($Op:ident $op:ident $compute:ident) => {
 
         #[inline]
         fn $op(self) -> Self::Output {
-            let mut out = Bv::new_const(self.mgr, 0, self.size());
+            let mut out = Bv::zero(self.mgr, self.size());
             self.mgr.$compute(&self.bits, &mut out.bits);
             out
         }
@@ -371,7 +410,7 @@ macro_rules! binop(($Op:ident $op:ident $compute:ident $(, $OpAssign:ident $op_a
         #[inline]
         fn $op(self, rhs: Self) -> Self::Output {
             Bdd::assert_manager(self.mgr, rhs.mgr);
-            let mut dest = Bv::new_const(self.mgr, 0, self.size());
+            let mut dest = Bv::zero(self.mgr, self.size());
             self.mgr.$compute(&self.bits, &rhs.bits, &mut dest.bits);
             dest
         }
