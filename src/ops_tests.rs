@@ -41,19 +41,23 @@ macro_rules! binop(($ALGS_ARRAY:ident, $node_count:ident, $equivalence:ident $(,
     }
 });
 
-binop!(IMPLY_ALGS, imply_algs_node_count, imply_algs_equivalence);
+binop!(
+    IMPLIES_ALGS,
+    implies_algs_node_count,
+    implies_algs_equivalence,
+);
 
-const IMPLY_ALGS: [(&str, fn(mgr: &BddManager, e1: BddId, e2: BddId) -> BddId); 3] = [
-    ("imply", BddManager::imply),
-    ("imply_ite_not", imply_ite_not),
-    ("imply_simple", imply_simple),
+const IMPLIES_ALGS: [(&str, fn(mgr: &BddManager, e1: BddId, e2: BddId) -> BddId); 3] = [
+    ("implies", BddManager::implies),
+    ("implies_ite_not", implies_ite_not),
+    ("implies_simple", implies_simple),
 ];
 
-fn imply_ite_not(mgr: &BddManager, e1: BddId, e2: BddId) -> BddId {
+fn implies_ite_not(mgr: &BddManager, e1: BddId, e2: BddId) -> BddId {
     mgr.ite(mgr.not(e1), BddId::ONE, e2)
 }
 
-fn imply_simple(mgr: &BddManager, e1: BddId, e2: BddId) -> BddId {
+fn implies_simple(mgr: &BddManager, e1: BddId, e2: BddId) -> BddId {
     mgr.or(mgr.not(e1), e2)
 }
 

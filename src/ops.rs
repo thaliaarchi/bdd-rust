@@ -34,7 +34,7 @@ impl BddManager {
     }
 
     /// Computes Boolean implication.
-    pub(crate) fn imply(&self, x: BddId, y: BddId) -> BddId {
+    pub(crate) fn implies(&self, x: BddId, y: BddId) -> BddId {
         self.ite(x, y, BddId::ONE)
     }
 
@@ -126,9 +126,9 @@ impl<'mgr> Bdd<'mgr> {
 
     /// Computes implication.
     #[inline]
-    pub fn imply(&self, rhs: Self) -> Self {
+    pub fn implies(&self, rhs: Self) -> Self {
         Self::assert_manager(self.mgr, rhs.mgr);
-        self.mgr.wrap(self.mgr.imply(self.id, rhs.id))
+        self.mgr.wrap(self.mgr.implies(self.id, rhs.id))
     }
 
     /// Computes bidirectional implication.
